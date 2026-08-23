@@ -1,4 +1,4 @@
-/** Browser half: standalone OAuth Accounts page for DSH 0.1.1-rc.2. */
+/** Browser half of the standalone DSH OAuth Accounts page. */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'

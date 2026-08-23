@@ -1,4 +1,4 @@
-/** Shared browser/Host wire vocabulary for the rc2 OAuth account surface. */
+/** Shared browser/Host wire vocabulary for the OAuth account surface. */
 
 export const OAUTH_SOCKET_PATH = '/_edge-sky/dsh-oauth'
 export const OAUTH_SOCKET_PROTOCOL = 'dsh-oauth-v1'

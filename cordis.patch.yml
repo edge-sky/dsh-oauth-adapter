@@ -1,6 +1,6 @@
 - insert:
-    - id: authorization
-      name: '@deepseek-ai/dsh-authorization'
+    - id: dsh-oauth-authorization
+      name: '@edge-sky/dsh-oauth-adapter/authorization-fallback'
 
     - id: dsh-oauth-adapter
       name: '@edge-sky/dsh-oauth-adapter'

@@ -23,6 +23,7 @@
     ]
   },
   "include": [
+    "src/authorization-fallback.ts",
     "src/index.ts",
     "src/invariant.ts",
     "src/protocol.ts"

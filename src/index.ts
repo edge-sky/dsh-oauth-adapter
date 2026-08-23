@@ -1,5 +1,5 @@
 /**
- * DSH 0.1.1-rc.2 Web surface for authorization flows owned by the official
+ * DSH Web surface for authorization flows owned by the official
  * `dsh-llm-pi-ai` plugin.
  * @module @edge-sky/dsh-oauth-adapter
  */
@@ -35,7 +35,7 @@ export const Config: z<Config> = z.object({
 
 /** Cordis plugin name. */
 export const name = 'dsh-oauth-adapter'
-/** Official rc2 services required by the compatibility surface. */
+/** Official services required by the OAuth account surface. */
 export const inject = ['authorization', 'credentials', 'settings', 'webServer']
 
 const MODEL_SETTINGS_NS = settingsNamespace('llm-pi-ai')
