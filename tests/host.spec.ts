@@ -49,7 +49,7 @@ async function connect(port: number): Promise<{ client: WebSocket; messages: Ser
   return { client, messages }
 }
 
-async function harness(mode: 'prompt' | 'cancel' | 'withdraw' = 'prompt'): Promise<Harness> {
+async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' = 'prompt'): Promise<Harness> {
   const root = new Context()
   const configured = new Map<string, boolean>()
   const deleted: string[] = []
@@ -80,16 +80,19 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' = 'prompt'): Promi
             return { status: 'cancelled' as const }
           }
           const promptController = new AbortController()
-          const answerPromise = request.interaction.prompt({
-            kind: 'secret', message: 'Paste code', signal: promptController.signal,
-          })
+          const answerPromise = request.interaction.prompt(mode === 'github-domain'
+            ? {
+              kind: 'text', message: 'GitHub Enterprise URL/domain (blank for github.com)',
+              placeholder: 'company.ghe.com', signal: promptController.signal,
+            }
+            : { kind: 'secret', message: 'Paste code', signal: promptController.signal })
           if (mode === 'withdraw') {
             promptController.abort()
             await expect(answerPromise).rejects.toThrow('withdrawn')
             return { status: 'cancelled' as const }
           }
           const answer = await answerPromise
-          expect(answer).toBe('private-answer')
+          expect(answer).toBe(mode === 'github-domain' ? '' : 'private-answer')
           configured.set(request.key, true)
           for (const listener of listeners.get('credentials/record-updated') ?? []) listener(request.key)
           return { status: 'authorized' as const }
@@ -216,6 +219,24 @@ describe('OAuth Host surface', () => {
     await waitFor(() => test.messages.find(message => message.type === 'error' && message.code === 'invalid-attempt'))
     send(test.client, { type: 'cancel', requestId: 'cancel-own', attemptId: started.attemptId })
     await waitFor(() => test.messages.find(message => message.type === 'settled' && message.status === 'cancelled'))
+  })
+
+  it('marks the GitHub domain prompt as accepting the github.com default', async () => {
+    const test = await harness('github-domain')
+    send(test.client, { type: 'begin', requestId: 'begin', provider: 'github-copilot' })
+    const started = await waitFor(() => test.messages.find(message => message.type === 'started'))
+    const prompt = await waitFor(() => test.messages.find(message => message.type === 'prompt'))
+    if (started.type !== 'started' || prompt.type !== 'prompt') throw new Error('unexpected messages')
+    expect(prompt.prompt).toEqual({
+      kind: 'text', message: 'GitHub Enterprise URL/domain (blank for github.com)',
+      placeholder: 'company.ghe.com', allowEmpty: true,
+    })
+    send(test.client, {
+      type: 'respond', requestId: 'respond', attemptId: started.attemptId,
+      promptId: prompt.promptId, value: '',
+    })
+    await waitFor(() => test.messages.find(message => message.type === 'settled' && message.status === 'authorized'))
+    expect(test.configured.get(recordKeyFor('github-copilot'))).toBe(true)
   })
 
   it('preserves an existing user-configured OAuth route when signing out', async () => {

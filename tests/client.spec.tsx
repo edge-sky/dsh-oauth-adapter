@@ -2,7 +2,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { OAuthAccountsSection } from '../src/client/OAuthAccountsSection.tsx'
 import { en, zh } from '../src/client/locales.ts'
-import type { OAuthAccountsSnapshot } from '../src/client/store.ts'
+import {
+  reconcileAttemptView, settleAttemptView, type OAuthAccountsSnapshot,
+} from '../src/client/store.ts'
 
 function render(snapshot: OAuthAccountsSnapshot): string {
   const controller = {
@@ -114,6 +116,45 @@ describe('OAuth Accounts settings page', () => {
     expect(html).toContain('Personal')
     expect(html).toContain('Business')
     expect(html).toContain('Cancel')
+  })
+
+  it('allows a blank GitHub domain and explains the github.com default', () => {
+    const html = render({
+      connection: 'open',
+      accounts: [{
+        provider: 'github-copilot', label: 'GitHub Copilot', available: true,
+        configured: false, modelsEnabled: false, writable: true, inFlight: true,
+      }],
+      attempt: {
+        id: 'attempt', provider: 'github-copilot', phase: 'running',
+        prompt: {
+          id: 'prompt',
+          prompt: {
+            kind: 'text', message: 'GitHub Enterprise URL/domain (blank for github.com)',
+            placeholder: 'company.ghe.com', allowEmpty: true,
+          },
+        },
+      },
+    })
+    expect(html).toContain('GitHub Enterprise domain')
+    expect(html).toContain('Leave blank to use github.com.')
+    const continueButton = html.match(/<button[^>]*>Continue<\/button>/u)?.[0]
+    expect(continueButton).toBeDefined()
+    expect(continueButton).not.toContain('disabled')
+  })
+
+  it('clears completed-flow details after the ready account snapshot arrives', () => {
+    const settled = settleAttemptView({
+      id: 'attempt', provider: 'github-copilot', phase: 'running',
+      notice: { message: 'Enabling models...' },
+      prompt: { id: 'prompt', prompt: { kind: 'text', message: 'Old prompt' } },
+    }, 'authorized')
+    expect(settled.notice).toBeUndefined()
+    expect(settled.prompt).toBeUndefined()
+    expect(reconcileAttemptView(settled, [{
+      provider: 'github-copilot', label: 'GitHub Copilot', available: true,
+      configured: true, modelsEnabled: true, writable: true, inFlight: false,
+    }])).toBeUndefined()
   })
 
   it('distinguishes a stored account whose model route is unavailable', () => {

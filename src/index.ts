@@ -85,7 +85,9 @@ function pluginOwnsModelRoute(settings: SettingsProvider, provider: (typeof PROV
     && profile.displayName === provider.modelGroupLabel
 }
 
-function promptView(prompt: AuthorizationPrompt): PromptView {
+const GITHUB_DOMAIN_PROMPT = 'GitHub Enterprise URL/domain (blank for github.com)'
+
+function promptView(prompt: AuthorizationPrompt, provider: ProviderId): PromptView {
   if (prompt.kind === 'select') {
     return { kind: 'select', message: prompt.message, options: prompt.options.map(option => ({ ...option })) }
   }
@@ -93,6 +95,9 @@ function promptView(prompt: AuthorizationPrompt): PromptView {
     kind: prompt.kind,
     message: prompt.message,
     ...prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder },
+    ...provider === 'github-copilot' && prompt.kind === 'text' && prompt.message === GITHUB_DOMAIN_PROMPT
+      ? { allowEmpty: true }
+      : {},
   }
 }
 
@@ -378,7 +383,10 @@ class OAuthConnection {
         withdraw()
         return
       }
-      this.send({ type: 'prompt', attemptId: attempt.id, promptId, prompt: promptView(prompt) })
+      this.send({
+        type: 'prompt', attemptId: attempt.id, promptId,
+        prompt: promptView(prompt, attempt.provider),
+      })
     })
   }
 

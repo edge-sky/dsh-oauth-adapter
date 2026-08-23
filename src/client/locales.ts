@@ -24,6 +24,8 @@ export const en = {
   copied: 'Copied',
   openLink: 'Open authorization page',
   externalLink: 'External provider page',
+  githubDomainPrompt: 'GitHub Enterprise domain',
+  githubDomainHint: 'Leave blank to use github.com.',
   loading: 'Loading account status…',
   hostDisconnected: 'The OAuth connection to DSH was interrupted.',
 } as const
@@ -54,6 +56,8 @@ export const zh: Record<keyof typeof en, string> = {
   copied: '已复制',
   openLink: '打开授权页面',
   externalLink: '外部提供商页面',
+  githubDomainPrompt: 'GitHub Enterprise 域名',
+  githubDomainHint: '留空将默认使用 github.com。',
   loading: '正在读取账户状态…',
   hostDisconnected: '与 DSH 的 OAuth 连接已中断。',
 }

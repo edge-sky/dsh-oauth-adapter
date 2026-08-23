@@ -30,7 +30,13 @@ export interface AccountView {
 }
 
 export type PromptView = {
-  kind: 'text' | 'secret'
+  kind: 'text'
+  message: string
+  placeholder?: string
+  /** Whether an empty response has provider-defined meaning. */
+  allowEmpty?: boolean
+} | {
+  kind: 'secret'
   message: string
   placeholder?: string
 } | {

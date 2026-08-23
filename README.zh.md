@@ -27,6 +27,8 @@ npx @deepseek-ai/dsh@0.1.1-rc.2 web
 
 打开**设置 → OAuth 账户**，即可连接或断开账户。
 
+GitHub Copilot 登录时可以填写 GitHub Enterprise 域名；留空即使用 `github.com`。
+
 登录后，适配器会启用对应的官方 `llm-pi-ai` 路由。模型选择器会将其显示为 **OpenAI Codex (OAuth)** 或 **GitHub Copilot (OAuth)**，并与 API 密钥及自定义网关路由分组显示。连接账户后，重新打开模型选择器即可刷新模型目录。
 
 安装时可能出现 `dsh-authorization` 缺少 peer 的提示。rc2 profile 的这些服务由 profile 包目录之外的官方 DSH runtime 提供；适配器有意将它们保留为 peer，避免 pnpm 安装第二套 Cordis/DSH runtime。

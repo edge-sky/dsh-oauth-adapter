@@ -27,6 +27,8 @@ npx @deepseek-ai/dsh@0.1.1-rc.2 web
 
 Open **Settings → OAuth Accounts** to connect or disconnect an account.
 
+GitHub Copilot accepts an optional GitHub Enterprise domain during sign-in. Leave it blank to use `github.com`.
+
 After sign-in, the adapter activates the matching official `llm-pi-ai` route. The model selector lists it as **OpenAI Codex (OAuth)** or **GitHub Copilot (OAuth)**, in a provider group separate from API-key and custom gateway routes. Reopen the model selector to refresh its catalog after connecting an account.
 
 The installer may report missing peers for `dsh-authorization`. In the rc2 profile layout, those services are supplied by the official DSH runtime outside the profile's package tree; the adapter intentionally leaves them as peers so pnpm does not install a second Cordis/DSH runtime.

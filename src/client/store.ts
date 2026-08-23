@@ -45,6 +45,27 @@ function isServerMessage(value: unknown): value is ServerMessage {
   return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string'
 }
 
+/** Remove interaction-only content once an authorization attempt settles. */
+export function settleAttemptView(
+  attempt: AttemptView,
+  status: Extract<ServerMessage, { type: 'settled' }>['status'],
+): AttemptView {
+  const next = { ...attempt, phase: status } as AttemptView
+  delete next.prompt
+  delete next.notice
+  return next
+}
+
+/** Hide a successful attempt after the account snapshot confirms its model route. */
+export function reconcileAttemptView(
+  attempt: AttemptView | undefined,
+  accounts: readonly AccountView[],
+): AttemptView | undefined {
+  if (attempt?.phase !== 'authorized' || attempt.error !== undefined) return attempt
+  const account = accounts.find(candidate => candidate.provider === attempt.provider)
+  return account?.configured === true && account.modelsEnabled ? undefined : attempt
+}
+
 /** App-lifetime controller; reconnects without persisting provider messages or answers. */
 export class OAuthAccountsController {
   private snapshot: OAuthAccountsSnapshot = { connection: 'connecting', accounts: [] }
@@ -171,7 +192,12 @@ export class OAuthAccountsController {
   private receive(message: ServerMessage): void {
     switch (message.type) {
       case 'snapshot':
-        this.update({ ...this.snapshot, accounts: [...message.accounts] })
+        const accounts = [...message.accounts]
+        const reconciled = reconcileAttemptView(this.snapshot.attempt, accounts)
+        const nextSnapshot = { ...this.snapshot, accounts }
+        if (reconciled === undefined) delete nextSnapshot.attempt
+        else nextSnapshot.attempt = reconciled
+        this.update(nextSnapshot)
         return
       case 'started':
         const { error: _error, ...current } = this.snapshot
@@ -216,9 +242,7 @@ export class OAuthAccountsController {
       case 'settled': {
         const attempt = this.snapshot.attempt
         if (attempt?.id !== message.attemptId) return
-        const next = { ...attempt, phase: message.status } as AttemptView
-        delete next.prompt
-        this.update({ ...this.snapshot, attempt: next })
+        this.update({ ...this.snapshot, attempt: settleAttemptView(attempt, message.status) })
         return
       }
       case 'error': {

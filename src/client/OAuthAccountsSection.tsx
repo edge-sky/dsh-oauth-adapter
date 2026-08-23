@@ -45,13 +45,18 @@ function PromptForm(props: {
 }): JSX.Element {
   const { prompt } = props.active
   const [value, setValue] = useState(prompt.kind === 'select' ? prompt.options[0]?.id ?? '' : '')
+  const canSubmit = value.length > 0 || (prompt.kind === 'text' && prompt.allowEmpty === true)
   const submit = (): void => {
+    if (!canSubmit) return
     props.controller.respond(props.attemptId, props.active.id, value)
     setValue('')
   }
   return (
     <div className="dsh-oauth-prompt">
-      <span>{prompt.message}</span>
+      <span>{prompt.kind === 'text' && prompt.allowEmpty === true ? props.t('githubDomainPrompt') : prompt.message}</span>
+      {prompt.kind === 'text' && prompt.allowEmpty === true && (
+        <span className="dsh-oauth-muted">{props.t('githubDomainHint')}</span>
+      )}
       {prompt.kind === 'select'
         ? (
           <select className="dsh-oauth-select" value={value} onChange={event => { setValue(event.target.value) }}>
@@ -71,7 +76,7 @@ function PromptForm(props: {
             onKeyDown={event => { if (event.key === 'Enter') submit() }}
           />
         )}
-      <button className="dsh-oauth-button" data-variant="primary" type="button" disabled={value.length === 0} onClick={submit}>
+      <button className="dsh-oauth-button" data-variant="primary" type="button" disabled={!canSubmit} onClick={submit}>
         {props.t('submit')}
       </button>
     </div>
