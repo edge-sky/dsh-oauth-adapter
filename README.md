@@ -16,6 +16,12 @@ Install the npm package into DSH's `web` profile:
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 ```
 
+or
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
+```
+
 After installation, DSH automatically adds the bundle to the profile. Start DSH:
 
 ```sh

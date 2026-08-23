@@ -4,3 +4,7 @@ packages:
 allowBuilds:
   '@google/genai': false
   protobufjs: false
+
+overrides:
+  '@deepseek-ai/dsh-authorization': link:../deepseek-harness/packages/credentials/authorization
+  '@deepseek-ai/dsh-llm-pi-ai': link:../deepseek-harness/packages/llm/llm-pi-ai

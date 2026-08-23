@@ -16,6 +16,12 @@
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 ```
 
+或
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
+```
+
 安装后，DSH 会自动将 Bundle 加入该 profile。启动 DSH：
 
 ```sh
