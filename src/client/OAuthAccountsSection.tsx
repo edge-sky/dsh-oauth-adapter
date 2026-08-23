@@ -23,6 +23,20 @@ function safeHttpUrl(value: string | undefined): string | undefined {
   }
 }
 
+function AuthorizationLink(props: {
+  url: string
+  t: OAuthAccountsInjected['t']
+}): JSX.Element {
+  const host = new URL(props.url).host
+  return (
+    <a className="dsh-oauth-link" href={props.url} target="_blank" rel="noreferrer noopener">
+      <span className="dsh-oauth-link-label">{props.t('openLink')}</span>
+      <span className="dsh-oauth-link-host">{host}</span>
+      <span className="dsh-oauth-link-icon" aria-label={props.t('externalLink')}>↗</span>
+    </a>
+  )
+}
+
 function PromptForm(props: {
   attemptId: string
   active: ActivePromptView
@@ -57,7 +71,7 @@ function PromptForm(props: {
             onKeyDown={event => { if (event.key === 'Enter') submit() }}
           />
         )}
-      <button className="dsh-oauth-button" data-primary="true" type="button" disabled={value.length === 0} onClick={submit}>
+      <button className="dsh-oauth-button" data-variant="primary" type="button" disabled={value.length === 0} onClick={submit}>
         {props.t('submit')}
       </button>
     </div>
@@ -76,12 +90,18 @@ function AttemptPanel(props: {
     ? props.t('authorized')
     : props.attempt.phase === 'cancelled'
       ? props.t('cancelled')
-      : props.attempt.phase === 'failed' ? props.t('failed') : props.t('opening')
+      : props.attempt.phase === 'failed'
+        ? props.t('failed')
+        : props.attempt.phase === 'starting'
+          ? props.t('starting')
+          : props.attempt.prompt !== undefined
+            ? props.t('awaitingAction')
+            : props.t('waitingProvider')
   return (
     <div className="dsh-oauth-flow">
       <span>{status}</span>
       {props.attempt.notice !== undefined && <span>{props.attempt.notice.message}</span>}
-      {url !== undefined && <a href={url} target="_blank" rel="noreferrer noopener">{url}</a>}
+      {url !== undefined && <AuthorizationLink url={url} t={props.t} />}
       {code !== undefined && (
         <div className="dsh-oauth-code">
           <code>{code}</code>
@@ -129,7 +149,7 @@ export function OAuthAccountsSection(props: OAuthAccountsSectionProps): JSX.Elem
       <p className="dsh-oauth-intro">{t('intro')}</p>
       {snapshot.error !== undefined && <p className="dsh-oauth-error">{snapshot.error}</p>}
       {snapshot.connection !== 'open' && (
-        <button className="dsh-oauth-button" type="button" onClick={() => { controller.retry() }}>{t('retry')}</button>
+        <button className="dsh-oauth-button" data-variant="secondary" type="button" onClick={() => { controller.retry() }}>{t('retry')}</button>
       )}
       {snapshot.accounts.length === 0 && <p className="dsh-oauth-muted">{t('loading')}</p>}
       <ul className="dsh-oauth-list">
@@ -137,18 +157,28 @@ export function OAuthAccountsSection(props: OAuthAccountsSectionProps): JSX.Elem
           const account = accountByProvider.get(provider)
           const attempt = snapshot.attempt?.provider === provider ? snapshot.attempt : undefined
           const busy = account?.inFlight === true || attempt?.phase === 'running' || attempt?.phase === 'starting'
+          const state = busy
+            ? 'authorizing'
+            : account?.configured === true
+              ? account.modelsEnabled ? 'ready' : 'warning'
+              : 'disconnected'
+          const stateText = busy
+            ? t('authorizing')
+            : account?.configured === true
+              ? account.modelsEnabled ? t('ready') : t('connectedNoModels')
+              : t('disconnected')
           return (
             <li className="dsh-oauth-card" key={provider}>
               <div className="dsh-oauth-head">
-                <span className="dsh-oauth-dot" data-connected={account?.configured === true} />
                 <span className="dsh-oauth-name">{account?.label ?? provider}</span>
-                <span className="dsh-oauth-state">
-                  {account?.configured === true ? t('connected') : t('disconnected')}
+                <span className="dsh-oauth-state" data-state={state}>
+                  <span className="dsh-oauth-dot" />
+                  {stateText}
                 </span>
                 <div className="dsh-oauth-actions">
                   <button
                     className="dsh-oauth-button"
-                    data-primary="true"
+                    data-variant="primary"
                     type="button"
                     disabled={snapshot.connection !== 'open' || busy || account?.available !== true}
                     onClick={() => { controller.begin(provider) }}
@@ -158,6 +188,7 @@ export function OAuthAccountsSection(props: OAuthAccountsSectionProps): JSX.Elem
                   {account?.configured === true && (
                     <button
                       className="dsh-oauth-button"
+                      data-variant="danger"
                       type="button"
                       disabled={snapshot.connection !== 'open' || busy || account.writable !== true}
                       onClick={() => { controller.forget(provider) }}

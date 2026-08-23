@@ -6,8 +6,14 @@ export const MAX_FRAME_BYTES = 16 * 1024
 export const MAX_ANSWER_LENGTH = 8 * 1024
 
 export const PROVIDERS = [
-  { id: 'openai-codex', key: 'llm-pi-ai/openai-codex', fallbackLabel: 'OpenAI Codex' },
-  { id: 'github-copilot', key: 'llm-pi-ai/github-copilot', fallbackLabel: 'GitHub Copilot' },
+  {
+    id: 'openai-codex', key: 'llm-pi-ai/openai-codex', fallbackLabel: 'OpenAI Codex',
+    modelGroupLabel: 'OpenAI Codex (OAuth)',
+  },
+  {
+    id: 'github-copilot', key: 'llm-pi-ai/github-copilot', fallbackLabel: 'GitHub Copilot',
+    modelGroupLabel: 'GitHub Copilot (OAuth)',
+  },
 ] as const
 
 export type ProviderId = (typeof PROVIDERS)[number]['id']
@@ -17,6 +23,8 @@ export interface AccountView {
   label: string
   available: boolean
   configured: boolean
+  /** Whether llm-pi-ai currently exposes this OAuth provider as a model route. */
+  modelsEnabled: boolean
   writable: boolean
   inFlight: boolean
 }
@@ -46,6 +54,7 @@ export type OAuthErrorCode =
   | 'invalid-attempt'
   | 'invalid-prompt'
   | 'credential-read-only'
+  | 'model-route-unavailable'
   | 'sign-in-failed'
   | 'operation-failed'
 

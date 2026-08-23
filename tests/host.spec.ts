@@ -13,6 +13,7 @@ interface Harness {
   messages: ServerMessage[]
   configured: Map<string, boolean>
   deleted: string[]
+  modelProfiles: Map<string, Record<string, unknown>>
   aborts: { count: number }
   port: number
   connect(): Promise<{ client: WebSocket; messages: ServerMessage[] }>
@@ -52,6 +53,7 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' = 'prompt'): Promi
   const root = new Context()
   const configured = new Map<string, boolean>()
   const deleted: string[] = []
+  const modelProfiles = new Map<string, Record<string, unknown>>()
   const aborts = { count: 0 }
   const inFlight = new Set<string>()
   let upgrade: ((...args: any[]) => void) | undefined
@@ -106,6 +108,29 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' = 'prompt'): Promi
         for (const listener of listeners.get('credentials/record-updated') ?? []) listener(key)
       },
     },
+    settings: {
+      writable: true,
+      get(namespace: string) {
+        if (namespace !== 'llm-pi-ai') return undefined
+        return { providers: Object.fromEntries(modelProfiles) }
+      },
+      describe() {
+        return [{
+          ns: 'llm-pi-ai', schema: {}, value: { providers: Object.fromEntries(modelProfiles) },
+          revision: 0, user: { providers: Object.fromEntries(modelProfiles) }, applies: 'live',
+        }]
+      },
+      async mutate(namespace: string, ops: Array<{ op: 'set' | 'unset'; path: string[]; value?: unknown }>) {
+        expect(namespace).toBe('llm-pi-ai')
+        for (const op of ops) {
+          expect(op.path.slice(0, 1)).toEqual(['providers'])
+          const provider = op.path[1]
+          if (provider === undefined) throw new Error('missing provider')
+          if (op.op === 'unset') modelProfiles.delete(provider)
+          else modelProfiles.set(provider, op.value as Record<string, unknown>)
+        }
+      },
+    },
     webServer: {
       registerUpgrade(route: { handler: (...args: any[]) => void }) {
         upgrade = route.handler
@@ -137,7 +162,7 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' = 'prompt'): Promi
   }
   cleanups.push(close)
   return {
-    ...primary, configured, deleted, aborts, port,
+    ...primary, configured, deleted, modelProfiles, aborts, port,
     connect: () => connect(port),
     close,
   }
@@ -163,10 +188,19 @@ describe('OAuth Host surface', () => {
     expect(JSON.stringify(test.messages)).not.toContain('private-answer')
     expect(recordKeyFor('openai-codex')).toBe('llm-pi-ai/openai-codex')
     expect(test.configured.get(recordKeyFor('openai-codex'))).toBe(true)
+    expect(test.modelProfiles.get('openai-codex')).toEqual({ displayName: 'OpenAI Codex (OAuth)' })
+    expect(test.messages).toContainEqual(expect.objectContaining({
+      type: 'snapshot',
+      accounts: expect.arrayContaining([expect.objectContaining({
+        provider: 'openai-codex', configured: true, modelsEnabled: true,
+      })]),
+    }))
 
     send(test.client, { type: 'forget', requestId: 'forget', provider: 'openai-codex' })
     await waitFor(() => test.deleted[0])
     expect(test.deleted).toEqual(['llm-pi-ai/openai-codex'])
+    await waitFor(() => test.modelProfiles.has('openai-codex') ? undefined : true)
+    expect(test.modelProfiles.has('openai-codex')).toBe(false)
   })
 
   it('cancels only the attempt owned by the requesting socket', async () => {
@@ -182,6 +216,26 @@ describe('OAuth Host surface', () => {
     await waitFor(() => test.messages.find(message => message.type === 'error' && message.code === 'invalid-attempt'))
     send(test.client, { type: 'cancel', requestId: 'cancel-own', attemptId: started.attemptId })
     await waitFor(() => test.messages.find(message => message.type === 'settled' && message.status === 'cancelled'))
+  })
+
+  it('preserves an existing user-configured OAuth route when signing out', async () => {
+    const test = await harness()
+    const profile = { displayName: 'Codex team route', modelOverrides: { 'gpt-5': { maxTokens: 8192 } } }
+    test.modelProfiles.set('openai-codex', profile)
+    send(test.client, { type: 'begin', requestId: 'begin', provider: 'openai-codex' })
+    const started = await waitFor(() => test.messages.find(message => message.type === 'started'))
+    const prompt = await waitFor(() => test.messages.find(message => message.type === 'prompt'))
+    if (started.type !== 'started' || prompt.type !== 'prompt') throw new Error('unexpected messages')
+    send(test.client, {
+      type: 'respond', requestId: 'respond', attemptId: started.attemptId,
+      promptId: prompt.promptId, value: 'private-answer',
+    })
+    await waitFor(() => test.messages.find(message => message.type === 'settled' && message.status === 'authorized'))
+    expect(test.modelProfiles.get('openai-codex')).toEqual(profile)
+
+    send(test.client, { type: 'forget', requestId: 'forget', provider: 'openai-codex' })
+    await waitFor(() => test.deleted[0])
+    expect(test.modelProfiles.get('openai-codex')).toEqual(profile)
   })
 
   it('rejects duplicate starts, unknown prompts, and sign-out while a flow is active', async () => {

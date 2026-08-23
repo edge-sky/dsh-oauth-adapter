@@ -11,6 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AuthorizationPrompt, AuthorizationService } from '@deepseek-ai/dsh-authorization'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
+import { settingsNamespace, type SettingsProvider } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import WebSocket, { WebSocketServer } from 'ws'
 import type { RawData } from 'ws'
@@ -35,11 +36,14 @@ export const Config: z<Config> = z.object({
 /** Cordis plugin name. */
 export const name = 'dsh-oauth-adapter'
 /** Official rc2 services required by the compatibility surface. */
-export const inject = ['authorization', 'credentials', 'webServer']
+export const inject = ['authorization', 'credentials', 'settings', 'webServer']
+
+const MODEL_SETTINGS_NS = settingsNamespace('llm-pi-ai')
 
 type OAuthContext = Context & {
   authorization: AuthorizationService
   credentials: CredentialProvider
+  settings: SettingsProvider
   webServer: WebServer
 }
 
@@ -60,6 +64,25 @@ function providerMeta(providerId: ProviderId): (typeof PROVIDERS)[number] {
   const provider = PROVIDERS.find(candidate => candidate.id === providerId)
   if (provider === undefined) throw new Error(`unsupported provider: ${providerId}`)
   return provider
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function modelRouteEnabled(settings: SettingsProvider, provider: ProviderId): boolean {
+  const section = settings.get(MODEL_SETTINGS_NS)
+  if (!isRecord(section) || !isRecord(section.providers)) return false
+  return Object.hasOwn(section.providers, provider)
+}
+
+function pluginOwnsModelRoute(settings: SettingsProvider, provider: (typeof PROVIDERS)[number]): boolean {
+  const descriptor = settings.describe().find(candidate => candidate.ns === MODEL_SETTINGS_NS)
+  if (!isRecord(descriptor?.user) || !isRecord(descriptor.user.providers)) return false
+  const profile = descriptor.user.providers[provider.id]
+  return isRecord(profile)
+    && Object.keys(profile).length === 1
+    && profile.displayName === provider.modelGroupLabel
 }
 
 function promptView(prompt: AuthorizationPrompt): PromptView {
@@ -215,14 +238,35 @@ class OAuthConnection {
   private async account(provider: (typeof PROVIDERS)[number]): Promise<AccountView> {
     const entry = this.ctx.authorization.describe(provider.key as never)
     const credential = await this.ctx.credentials.describeRecord(provider.key as never)
+    let modelsEnabled = modelRouteEnabled(this.ctx.settings, provider.id)
+    if (credential.configured && !modelsEnabled && this.ctx.settings.writable) {
+      try {
+        modelsEnabled = await this.enableModelRoute(provider)
+      } catch (error) {
+        this.ctx.logger.warn('dsh-oauth-adapter: model route activation failed for %s', provider.id)
+        this.ctx.logger.warn(error)
+      }
+    }
     return {
       provider: provider.id,
       label: entry?.label ?? provider.fallbackLabel,
       available: entry?.methods.some(method => method.id === 'oauth') === true,
       configured: credential.configured,
+      modelsEnabled,
       writable: credential.writable,
       inFlight: entry?.inFlight ?? false,
     }
+  }
+
+  private async enableModelRoute(provider: (typeof PROVIDERS)[number]): Promise<boolean> {
+    if (modelRouteEnabled(this.ctx.settings, provider.id)) return true
+    if (!this.ctx.settings.writable) return false
+    await this.ctx.settings.mutate(MODEL_SETTINGS_NS, [{
+      op: 'set',
+      path: ['providers', provider.id],
+      value: { displayName: provider.modelGroupLabel },
+    }])
+    return modelRouteEnabled(this.ctx.settings, provider.id)
   }
 
   private async sendSnapshot(requestId?: string): Promise<void> {
@@ -275,7 +319,29 @@ class OAuthConnection {
         },
         prompt: prompt => this.openPrompt(attempt, prompt),
       },
-    }).then((outcome) => {
+    }).then(async (outcome) => {
+      if (outcome.status === 'authorized') {
+        try {
+          const enabled = await this.enableModelRoute(provider)
+          if (!enabled) {
+            this.sendError(
+              'model-route-unavailable',
+              'sign-in completed, but the OAuth model route could not be enabled',
+              undefined,
+              attempt.id,
+            )
+          }
+        } catch (error) {
+          this.ctx.logger.warn('dsh-oauth-adapter: model route activation failed for %s', provider.id)
+          this.ctx.logger.warn(error)
+          this.sendError(
+            'model-route-unavailable',
+            'sign-in completed, but the OAuth model route could not be enabled',
+            undefined,
+            attempt.id,
+          )
+        }
+      }
       this.finish(attempt, outcome.status)
     }, (error: unknown) => {
       this.ctx.logger.warn('dsh-oauth-adapter: provider sign-in failed for %s', attempt.provider)
@@ -353,6 +419,11 @@ class OAuthConnection {
     }
     try {
       await this.ctx.credentials.deleteRecord(provider.key as never)
+      if (pluginOwnsModelRoute(this.ctx.settings, provider)) {
+        await this.ctx.settings.mutate(MODEL_SETTINGS_NS, [{
+          op: 'unset', path: ['providers', provider.id],
+        }])
+      }
       this.send({ type: 'ack', requestId: command.requestId })
       await this.sendSnapshot()
     } catch (error) {

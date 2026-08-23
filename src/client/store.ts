@@ -66,6 +66,7 @@ export class OAuthAccountsController {
   readonly getSnapshot = (): OAuthAccountsSnapshot => this.snapshot
 
   begin(provider: ProviderId): void {
+    if (this.snapshot.attempt?.phase === 'starting' || this.snapshot.attempt?.phase === 'running') return
     const { error: _error, ...current } = this.snapshot
     this.update({
       ...current,
