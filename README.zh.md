@@ -27,6 +27,11 @@ npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 npx @deepseek-ai/dsh web
 ```
 
+<img width="2270" height="1524" alt="image" src="https://github.com/user-attachments/assets/134ec856-e17b-4800-bb87-069851986d3e" />
+
+<img width="2270" height="1524" alt="image" src="https://github.com/user-attachments/assets/8007002a-a036-4cf4-b015-d4e50eff25d9" />
+
+
 ## 工作原理
 
 DSH 通过 `@deepseek-ai/dsh-llm-pi-ai` 适配器接入 pi-ai，但并没有提供 OAuth 的入口。`@edge-sky/dsh-oauth-adapter` 将 pi-ai 已有的 Codex 与 Copilot 登录流程注册到 DSH Authorization Service。
