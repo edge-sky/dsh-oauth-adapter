@@ -10,7 +10,7 @@ export const name = 'dsh-oauth-adapter-invariant'
 /** Service required before package ownership is registered. */
 export const inject = ['invariants']
 
-/** No runtime invariant: dsh-authorization asserts the registered-flow lifecycle. */
+/** No runtime invariant: the Host owns and tears down every socket and attempt directly. */
 const install: InvariantInstaller = () => {}
 
 /** Register this package's invariant companion. */

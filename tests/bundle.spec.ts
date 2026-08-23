@@ -7,13 +7,28 @@ const root = resolve(import.meta.dirname, '..')
 describe('DSH Bundle', () => {
   it('publishes the declared profile patch', () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
-      dsh?: { bundle?: { patch?: string } }
+      dsh?: { bundle?: { patch?: string }; client?: { platform?: string; inject?: string[] } }
+      exports?: Record<string, unknown>
       files?: string[]
     }
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+    expect(manifest.dsh?.client).toMatchObject({ platform: 'web' })
+    expect(manifest.exports).toHaveProperty('./client')
     expect(manifest.files).toContain('cordis.patch.yml')
     expect(readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8')).toBe(
-      "- insert:\n    - id: dsh-oauth-adapter\n      name: '@edge-sky/dsh-oauth-adapter'\n",
+      "- insert:\n"
+      + "    - id: authorization\n"
+      + "      name: '@deepseek-ai/dsh-authorization'\n\n"
+      + "    - id: dsh-oauth-adapter\n"
+      + "      name: '@edge-sky/dsh-oauth-adapter'\n",
     )
   })
+
+  it('builds both Host and browser artifacts without the removed compatibility bridge', () => {
+    expect(readFileSync(resolve(root, 'lib/protocol.js'), 'utf8')).toContain(OAUTH_ROUTE_MARKER)
+    expect(readFileSync(resolve(root, 'lib/client.js'), 'utf8')).toContain('__ModuleLoader__.load')
+    expect(() => readFileSync(resolve(root, 'lib/compat.js'), 'utf8')).toThrow()
+  })
 })
+
+const OAUTH_ROUTE_MARKER = '/_edge-sky/dsh-oauth'

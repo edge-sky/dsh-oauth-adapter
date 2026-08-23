@@ -1,30 +1,29 @@
 /**
- * OAuth authorization-flow contributions for DSH LLM providers.
- *
- * The plugin owns only the human authorization interaction. Provider request
- * protocols, token refresh, model conversion, tools, and streaming stay with
- * the adapter family whose credential record the flow writes.
+ * DSH 0.1.1-rc.2 Web surface for authorization flows owned by the official
+ * `dsh-llm-pi-ai` plugin.
  * @module @edge-sky/dsh-oauth-adapter
  */
 
-import { Logger, LoggerLevel } from '@deepseek-ai/cordis'
-import type { Context, Exporter } from '@deepseek-ai/cordis'
+import { randomUUID } from 'node:crypto'
+import type { IncomingMessage } from 'node:http'
+import type { Duplex } from 'node:stream'
+import type { Context } from '@deepseek-ai/cordis'
+import type { AuthorizationPrompt, AuthorizationService } from '@deepseek-ai/dsh-authorization'
+import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
+import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
-import type { AuthorizationService } from '@deepseek-ai/dsh-authorization'
-import type { AuthorizationSubjectMap } from '@deepseek-ai/dsh-authorization/types'
-import { loadPiAiOAuthBridge } from './compat.js'
-import type { PiAiOAuthBridge } from './compat.js'
-
-declare module '@deepseek-ai/dsh-authorization/types' {
-  interface AuthorizationSubjectMap {
-    /** OAuth flow joined to one DSH LLM provider route. */
-    'llm-provider': { kind: 'llm-provider'; provider: string }
-  }
-}
+import WebSocket, { WebSocketServer } from 'ws'
+import type { RawData } from 'ws'
+import {
+  MAX_FRAME_BYTES, OAUTH_SOCKET_PATH, OAUTH_SOCKET_PROTOCOL, PROVIDERS, parseClientCommand,
+} from './protocol.js'
+import type {
+  AccountView, ClientCommand, OAuthErrorCode, PromptView, ProviderId, ServerMessage,
+} from './protocol.js'
 
 /** Plugin configuration. */
 export interface Config {
-  /** Emit redacted OAuth lifecycle diagnostics to stderr at debug level. */
+  /** Emit secret-free transport lifecycle diagnostics. */
   debug?: boolean
 }
 
@@ -35,40 +34,399 @@ export const Config: z<Config> = z.object({
 
 /** Cordis plugin name. */
 export const name = 'dsh-oauth-adapter'
-/** Required authorization registry. */
-export const inject = ['authorization']
+/** Official rc2 services required by the compatibility surface. */
+export const inject = ['authorization', 'credentials', 'webServer']
 
-type OAuthContext = Context & { authorization: AuthorizationService }
-
-/** Install the opt-in debug logger and return its secret-free message sink. */
-function debugSink(ctx: OAuthContext, enabled: boolean): ((message: string) => void) | undefined {
-  if (!enabled) return undefined
-  const loggerName = 'dsh-oauth-adapter'
-  const exporter: Exporter = {
-    colors: false,
-    levels: { default: -1, [loggerName]: LoggerLevel.DEBUG },
-    export: message => void process.stderr.write(
-      `[D] ${message.name} ${Logger.format(exporter, message)}\n`,
-    ),
-  }
-  ctx.logger.exporter(exporter)
-  const logger = ctx.logger(loggerName)
-  return (message) => { logger.debug('%s', message) }
+type OAuthContext = Context & {
+  authorization: AuthorizationService
+  credentials: CredentialProvider
+  webServer: WebServer
 }
 
-/** Register Codex and Copilot OAuth flows. */
-export async function apply(ctx: OAuthContext, config: Config): Promise<void> {
-  const {
-    authContextFrom, credentialStoreFrom, piAiOAuthFlow,
-  } = await loadPiAiOAuthBridge()
-  const debug = debugSink(ctx, config.debug === true)
-  debug?.('diagnostics enabled; secret values and provider payloads are redacted')
-  const auth = { credentials: credentialStoreFrom(ctx), authContext: authContextFrom(ctx) }
-  const diagnosticOptions = debug === undefined ? {} : { debug }
-  const register = (provider: string, flow: ReturnType<PiAiOAuthBridge['piAiOAuthFlow']>): void => {
-    const subject: AuthorizationSubjectMap['llm-provider'] = { kind: 'llm-provider', provider }
-    ctx.authorization.registerFlow({ ...flow, subject })
+interface ActiveAttempt {
+  id: string
+  provider: ProviderId
+  key: string
+  controller: AbortController
+  prompts: Map<string, PendingPrompt>
+}
+
+interface PendingPrompt {
+  resolve(value: string): void
+  reject(reason: Error): void
+}
+
+function providerMeta(providerId: ProviderId): (typeof PROVIDERS)[number] {
+  const provider = PROVIDERS.find(candidate => candidate.id === providerId)
+  if (provider === undefined) throw new Error(`unsupported provider: ${providerId}`)
+  return provider
+}
+
+function promptView(prompt: AuthorizationPrompt): PromptView {
+  if (prompt.kind === 'select') {
+    return { kind: 'select', message: prompt.message, options: prompt.options.map(option => ({ ...option })) }
   }
-  register('openai-codex', piAiOAuthFlow('openai-codex', auth, diagnosticOptions))
-  register('github-copilot', piAiOAuthFlow('github-copilot', auth, diagnosticOptions))
+  return {
+    kind: prompt.kind,
+    message: prompt.message,
+    ...prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder },
+  }
+}
+
+/** Whether a socket address belongs to the local host. */
+export function isLoopbackAddress(address: string | undefined): boolean {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
+}
+
+/** Keep provider-supplied navigation targets inside browser-safe URL schemes. */
+export function safeNoticeUrl(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Validate the browser handshake before `ws` takes ownership of the socket. */
+export function acceptsBrowserUpgrade(request: IncomingMessage): boolean {
+  const host = request.headers.host
+  const origin = request.headers.origin
+  if (host === undefined || origin === undefined || !isLoopbackAddress(request.socket.remoteAddress)) return false
+  if (request.headers['sec-websocket-protocol'] !== OAUTH_SOCKET_PROTOCOL) return false
+  let hostUrl: URL
+  let originUrl: URL
+  try {
+    hostUrl = new URL(`http://${host}`)
+    originUrl = new URL(origin)
+  } catch {
+    return false
+  }
+  if (originUrl.protocol !== 'http:' || originUrl.host !== hostUrl.host) return false
+  return hostUrl.hostname === '127.0.0.1' || hostUrl.hostname === 'localhost' || hostUrl.hostname === '[::1]'
+}
+
+function rejectUpgrade(socket: Duplex): void {
+  socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+  socket.destroy()
+}
+
+function rawLength(raw: RawData): number {
+  if (Array.isArray(raw)) return raw.reduce((total, chunk) => total + chunk.byteLength, 0)
+  return raw.byteLength
+}
+
+/** One ownership-scoped browser authorization connection. */
+class OAuthConnection {
+  private active: ActiveAttempt | undefined
+  private queue = Promise.resolve()
+  private closed = false
+
+  constructor(
+    private readonly ctx: OAuthContext,
+    private readonly socket: WebSocket,
+    private readonly debug: (message: string) => void,
+    private readonly changed: () => void,
+  ) {
+    socket.on('message', (raw, isBinary) => {
+      if (isBinary || rawLength(raw) > MAX_FRAME_BYTES) {
+        this.sendError('invalid-message', 'message must be bounded UTF-8 JSON')
+        socket.close(1009, 'invalid message')
+        return
+      }
+      this.queue = this.queue.then(() => this.receive(raw.toString())).catch((error: unknown) => {
+        this.ctx.logger.warn('dsh-oauth-adapter: command handling failed')
+        this.ctx.logger.warn(error)
+        this.sendError('operation-failed', 'the OAuth operation failed')
+      })
+    })
+    socket.on('close', () => {
+      this.closed = true
+      this.withdrawActive('browser connection closed')
+      this.debug('connection=closed')
+    })
+    socket.on('error', (error) => {
+      this.ctx.logger.debug('dsh-oauth-adapter: browser socket failed: %s', error.message)
+    })
+    this.debug('connection=opened')
+    void this.sendSnapshot()
+  }
+
+  refresh(): void {
+    void this.sendSnapshot()
+  }
+
+  dispose(): void {
+    this.closed = true
+    this.withdrawActive('OAuth surface stopped')
+    this.socket.terminate()
+  }
+
+  private send(message: ServerMessage): void {
+    if (this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message))
+  }
+
+  private sendError(
+    code: OAuthErrorCode,
+    message: string,
+    requestId?: string,
+    attemptId?: string,
+  ): void {
+    this.send({
+      type: 'error', code, message,
+      ...requestId === undefined ? {} : { requestId },
+      ...attemptId === undefined ? {} : { attemptId },
+    })
+  }
+
+  private async receive(raw: string): Promise<void> {
+    const parsed = parseClientCommand(raw)
+    if (!parsed.ok) {
+      this.sendError(
+        parsed.message === 'provider is unsupported' ? 'unsupported-provider' : 'invalid-message',
+        parsed.message,
+        parsed.requestId,
+      )
+      return
+    }
+    await this.handle(parsed.value)
+  }
+
+  private async handle(command: ClientCommand): Promise<void> {
+    switch (command.type) {
+      case 'refresh':
+        await this.sendSnapshot(command.requestId)
+        return
+      case 'begin':
+        this.begin(command)
+        return
+      case 'respond':
+        this.respond(command)
+        return
+      case 'cancel':
+        this.cancel(command)
+        return
+      case 'forget':
+        await this.forget(command)
+    }
+  }
+
+  private async account(provider: (typeof PROVIDERS)[number]): Promise<AccountView> {
+    const entry = this.ctx.authorization.describe(provider.key as never)
+    const credential = await this.ctx.credentials.describeRecord(provider.key as never)
+    return {
+      provider: provider.id,
+      label: entry?.label ?? provider.fallbackLabel,
+      available: entry?.methods.some(method => method.id === 'oauth') === true,
+      configured: credential.configured,
+      writable: credential.writable,
+      inFlight: entry?.inFlight ?? false,
+    }
+  }
+
+  private async sendSnapshot(requestId?: string): Promise<void> {
+    try {
+      const accounts = await Promise.all(PROVIDERS.map(provider => this.account(provider)))
+      this.send({ type: 'snapshot', accounts, ...requestId === undefined ? {} : { requestId } })
+    } catch (error) {
+      this.ctx.logger.warn('dsh-oauth-adapter: credential status read failed')
+      this.ctx.logger.warn(error)
+      this.sendError('operation-failed', 'account status is unavailable', requestId)
+    }
+  }
+
+  private begin(command: Extract<ClientCommand, { type: 'begin' }>): void {
+    if (this.active !== undefined) {
+      this.sendError('busy', 'this browser already owns an OAuth attempt', command.requestId, this.active.id)
+      return
+    }
+    const provider = providerMeta(command.provider)
+    const entry = this.ctx.authorization.describe(provider.key as never)
+    if (entry === undefined || !entry.methods.some(method => method.id === 'oauth')) {
+      this.sendError('authorization-unavailable', 'this provider has no OAuth flow', command.requestId)
+      return
+    }
+    if (entry.inFlight) {
+      this.sendError('busy', 'an OAuth attempt for this provider is already running', command.requestId)
+      return
+    }
+
+    const attempt: ActiveAttempt = {
+      id: randomUUID(), provider: command.provider, key: provider.key,
+      controller: new AbortController(), prompts: new Map(),
+    }
+    this.active = attempt
+    this.changed()
+    this.send({ type: 'started', requestId: command.requestId, attemptId: attempt.id, provider: attempt.provider })
+    this.debug(`provider=${attempt.provider} stage=started`)
+    void this.ctx.authorization.begin({
+      key: attempt.key as never,
+      method: 'oauth',
+      signal: attempt.controller.signal,
+      interaction: {
+        notify: notice => {
+          const url = safeNoticeUrl(notice.url)
+          this.send({
+            type: 'notice', attemptId: attempt.id, message: notice.message,
+            ...url === undefined ? {} : { url },
+            ...notice.code === undefined ? {} : { code: notice.code },
+          })
+        },
+        prompt: prompt => this.openPrompt(attempt, prompt),
+      },
+    }).then((outcome) => {
+      this.finish(attempt, outcome.status)
+    }, (error: unknown) => {
+      this.ctx.logger.warn('dsh-oauth-adapter: provider sign-in failed for %s', attempt.provider)
+      this.ctx.logger.warn(error)
+      this.sendError('sign-in-failed', 'sign-in failed; inspect the DSH Host log', undefined, attempt.id)
+      this.finish(attempt, 'failed')
+    })
+  }
+
+  private openPrompt(attempt: ActiveAttempt, prompt: AuthorizationPrompt): Promise<string> {
+    if (this.active !== attempt || this.closed) return Promise.reject(new Error('OAuth connection is closed'))
+    const promptId = randomUUID()
+    return new Promise<string>((resolve, reject) => {
+      let settled = false
+      const finish = (callback: () => void): void => {
+        if (settled) return
+        settled = true
+        prompt.signal?.removeEventListener('abort', withdraw)
+        attempt.prompts.delete(promptId)
+        callback()
+      }
+      const withdraw = (): void => {
+        finish(() => {
+          this.send({ type: 'prompt-withdrawn', attemptId: attempt.id, promptId })
+          reject(new Error('authorization prompt was withdrawn'))
+        })
+      }
+      attempt.prompts.set(promptId, {
+        resolve: value => { finish(() => { resolve(value) }) },
+        reject: reason => { finish(() => { reject(reason) }) },
+      })
+      prompt.signal?.addEventListener('abort', withdraw, { once: true })
+      if (prompt.signal?.aborted === true) {
+        withdraw()
+        return
+      }
+      this.send({ type: 'prompt', attemptId: attempt.id, promptId, prompt: promptView(prompt) })
+    })
+  }
+
+  private respond(command: Extract<ClientCommand, { type: 'respond' }>): void {
+    const active = this.active
+    if (active?.id !== command.attemptId) {
+      this.sendError('invalid-attempt', 'attempt does not belong to this browser', command.requestId)
+      return
+    }
+    const prompt = active.prompts.get(command.promptId)
+    if (prompt === undefined) {
+      this.sendError('invalid-prompt', 'prompt is expired or unknown', command.requestId, active.id)
+      return
+    }
+    prompt.resolve(command.value)
+    this.send({ type: 'ack', requestId: command.requestId })
+  }
+
+  private cancel(command: Extract<ClientCommand, { type: 'cancel' }>): void {
+    if (this.active?.id !== command.attemptId) {
+      this.sendError('invalid-attempt', 'attempt does not belong to this browser', command.requestId)
+      return
+    }
+    this.withdrawActive('authorization cancelled by browser')
+    this.send({ type: 'ack', requestId: command.requestId })
+  }
+
+  private async forget(command: Extract<ClientCommand, { type: 'forget' }>): Promise<void> {
+    const provider = providerMeta(command.provider)
+    if (this.ctx.authorization.describe(provider.key as never)?.inFlight === true) {
+      this.sendError('busy', 'cancel the active attempt before signing out', command.requestId)
+      return
+    }
+    const current = await this.ctx.credentials.describeRecord(provider.key as never)
+    if (!current.writable) {
+      this.sendError('credential-read-only', 'this credential store is read-only', command.requestId)
+      return
+    }
+    try {
+      await this.ctx.credentials.deleteRecord(provider.key as never)
+      this.send({ type: 'ack', requestId: command.requestId })
+      await this.sendSnapshot()
+    } catch (error) {
+      this.ctx.logger.warn('dsh-oauth-adapter: sign-out failed for %s', provider.id)
+      this.ctx.logger.warn(error)
+      this.sendError('operation-failed', 'sign-out failed; inspect the DSH Host log', command.requestId)
+    }
+  }
+
+  private finish(attempt: ActiveAttempt, status: 'authorized' | 'cancelled' | 'failed'): void {
+    if (this.active !== attempt) return
+    this.rejectPrompts(attempt, new Error(`authorization ${status}`))
+    this.active = undefined
+    this.changed()
+    this.send({ type: 'settled', attemptId: attempt.id, status })
+    this.debug(`provider=${attempt.provider} stage=settled status=${status}`)
+    void this.sendSnapshot()
+  }
+
+  private withdrawActive(reason: string): void {
+    const active = this.active
+    if (active === undefined) return
+    active.controller.abort(new Error(reason))
+    this.rejectPrompts(active, new Error(reason))
+  }
+
+  private rejectPrompts(attempt: ActiveAttempt, reason: Error): void {
+    for (const prompt of [...attempt.prompts.values()]) prompt.reject(reason)
+    attempt.prompts.clear()
+  }
+}
+
+/** Mount the loopback-only OAuth WebSocket over official rc2 services. */
+export function apply(ctx: OAuthContext, config: Config): () => Promise<void> {
+  const debug = config.debug === true
+    ? (message: string): void => { ctx.logger.debug('dsh-oauth-adapter: %s', message) }
+    : (): void => {}
+  const connections = new Set<OAuthConnection>()
+  const server = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_FRAME_BYTES,
+    handleProtocols: protocols => protocols.has(OAUTH_SOCKET_PROTOCOL) ? OAUTH_SOCKET_PROTOCOL : false,
+  })
+  server.on('connection', (socket) => {
+    const connection = new OAuthConnection(ctx, socket, debug, refresh)
+    connections.add(connection)
+    socket.once('close', () => { connections.delete(connection) })
+  })
+  server.on('error', (error) => {
+    ctx.logger.warn('dsh-oauth-adapter: WebSocket server failed')
+    ctx.logger.warn(error)
+  })
+
+  const unregister = ctx.webServer.registerUpgrade({
+    path: OAUTH_SOCKET_PATH,
+    handler(request, socket, head) {
+      if (!acceptsBrowserUpgrade(request)) {
+        rejectUpgrade(socket)
+        return
+      }
+      server.handleUpgrade(request, socket, head, (webSocket) => {
+        server.emit('connection', webSocket, request)
+      })
+    },
+  })
+  const refresh = (): void => { for (const connection of connections) connection.refresh() }
+  const credentialDisposer = ctx.on('credentials/record-updated', (key) => {
+    if (PROVIDERS.some(provider => provider.key === key)) refresh()
+  })
+  return async () => {
+    credentialDisposer()
+    unregister()
+    for (const connection of connections) connection.dispose()
+    connections.clear()
+    await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+  }
 }

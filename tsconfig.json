@@ -23,6 +23,8 @@
     ]
   },
   "include": [
-    "src"
+    "src/index.ts",
+    "src/invariant.ts",
+    "src/protocol.ts"
   ]
 }

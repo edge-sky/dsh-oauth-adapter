@@ -2,38 +2,37 @@
 
 English | [中文](README.zh.md)
 
-A Cordis plugin that adds model-provider OAuth login entry points to DSH (DeepSeek Harness). It currently supports:
+An OAuth account page for the Web profile of DSH `0.1.1-rc.2`. It supports:
 
-- [x] OpenAI Codex
+- OpenAI Codex
+- GitHub Copilot
 
-- [x] GitHub Copilot
+This release is intentionally limited to DSH `0.1.1-rc.2`. It does not support headless or ACP profiles, remote Web Hosts, or later DSH releases.
 
-## Getting Started
+## Install
 
-Install the npm package into DSH's `web` profile:
-
-```sh
-dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
-```
-
-or
+Install the exact adapter version into the official rc2 Web profile:
 
 ```sh
-npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
+npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add \
+  @edge-sky/dsh-oauth-adapter@0.1.1-rc.6 \
+  --save-exact
 ```
 
-After installation, DSH automatically adds the bundle to the profile. Start DSH:
+Start DSH:
 
 ```sh
-dsh web --no-open
+npx @deepseek-ai/dsh@0.1.1-rc.2 web
 ```
 
-The plugin uses the runtime dependencies provided by the current DSH installation. At startup, it reports an incompatible version directly if the OAuth bridge or the Codex/Copilot providers are missing.
+Open **Settings → OAuth Accounts** to connect or disconnect an account.
 
-Once DSH starts, connect Codex or GitHub Copilot under **Settings → Models**.
+The installer may report missing peers for `dsh-authorization`. In the rc2 profile layout, those services are supplied by the official DSH runtime outside the profile's package tree; the adapter intentionally leaves them as peers so pnpm does not install a second Cordis/DSH runtime.
 
-## How It Works
+## How it works
 
-DSH integrates pi-ai through the `@deepseek-ai/dsh-llm-pi-ai` adapter, but does not provide an OAuth entry point. `@edge-sky/dsh-oauth-adapter` registers pi-ai's existing Codex and Copilot login flows with the DSH Authorization Service.
+The bundle mounts the official `@deepseek-ai/dsh-authorization@0.1.1-rc.2` service and this adapter. The official `dsh-llm-pi-ai` plugin detects that service and registers its existing `openai-codex` and `github-copilot` OAuth flows. This adapter does not implement or register provider flows itself.
 
-The plugin itself does not manage OAuth credentials or maintain login state. Maybe DSH will support these login methods in the future, but for now this plugin provides a way to use them.
+The adapter adds a separate Settings page and a loopback-only, same-origin WebSocket used for interactive notices and prompts. Credentials remain owned by the official DSH credential service under `llm-pi-ai/openai-codex` and `llm-pi-ai/github-copilot`; credential values are never returned to the browser. Secret prompt answers are held only while the prompt is active and are not logged or persisted by the adapter.
+
+Set `debug: true` in the plugin configuration only when diagnosing connection lifecycle. Debug output excludes credentials, prompt answers, and provider payloads.
