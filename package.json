@@ -1,7 +1,7 @@
 {
   "name": "@edge-sky/dsh-oauth-adapter",
   "description": "OAuth authorization-flow contributions for DSH LLM providers",
-  "version": "0.1.1-rc.4",
+  "version": "0.1.1-rc.5",
   "author": {
     "name": "edge-sky",
     "url": "https://github.com/edge-sky"
