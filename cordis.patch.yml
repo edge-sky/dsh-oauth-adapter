@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-oauth-adapter
+      name: '@edge-sky/dsh-oauth-adapter'

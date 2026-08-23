@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 describe('OAuth flow contribution', () => {
-  it('registers provider-owned Codex and Copilot flows without deployment credentials', () => {
+  it('registers provider-owned Codex and Copilot flows without deployment credentials', async () => {
     const flows: Array<{
       key: string
       label: string
@@ -20,7 +20,7 @@ describe('OAuth flow contribution', () => {
       authorization: { registerFlow: (flow: typeof flows[number]) => { flows.push(flow) } },
     }
 
-    apply(ctx as never, {})
+    await apply(ctx as never, {})
 
     expect(flows.map(flow => ({
       key: flow.key,
@@ -52,10 +52,10 @@ describe('OAuth flow contribution', () => {
       authorization: { registerFlow: () => {} },
     }
 
-    apply(ctx as never, { debug: true })
+    await apply(ctx as never, { debug: true })
 
     expect(write).toHaveBeenCalledWith(
-      '[D] dsh-oauth diagnostics enabled; secret values and provider payloads are redacted\n',
+      '[D] dsh-oauth-adapter diagnostics enabled; secret values and provider payloads are redacted\n',
     )
     expect(write.mock.calls.flat().join('')).not.toContain('client')
     await root.fiber.dispose()
@@ -69,6 +69,6 @@ describe('OAuth flow contribution', () => {
     })
 
     await expect(Invariant.apply({ invariants: { register } } as never)).resolves.toBe(disposer)
-    expect(register).toHaveBeenCalledWith('dsh-oauth', expect.any(Function))
+    expect(register).toHaveBeenCalledWith('@edge-sky/dsh-oauth-adapter', expect.any(Function))
   })
 })
