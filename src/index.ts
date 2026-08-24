@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
+import { inspect } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AuthorizationPrompt, AuthorizationService } from '@deepseek-ai/dsh-authorization'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
@@ -145,6 +146,75 @@ function rawLength(raw: RawData): number {
   return raw.byteLength
 }
 
+const MAX_ERROR_DETAIL_LENGTH = 12 * 1024
+const MAX_ERROR_CAUSE_DEPTH = 6
+
+function redactErrorDetail(value: string): string {
+  return value
+    .replace(
+      /(\bAuthorization\b\s*["']?\s*[:=]\s*["']?)(?:Bearer\s+)?([^"'\s,}&]+)/giu,
+      '$1[REDACTED]',
+    )
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer [REDACTED]')
+    .replace(
+      /(\b(?:access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|api[_-]?key)\b\s*["']?\s*[:=]\s*["']?)([^"'\s,}&]+)/giu,
+      '$1[REDACTED]',
+    )
+    .replace(/\b(?:github_pat_|gh[opusr]_|sk-)[A-Za-z0-9_-]{12,}\b/gu, '[REDACTED]')
+}
+
+function errorProperties(value: object): string | undefined {
+  const record = value as Record<string, unknown>
+  const properties = ['code', 'status', 'statusCode']
+    .flatMap((key) => {
+      const entry = record[key]
+      return typeof entry === 'string' || typeof entry === 'number' ? [`${key}: ${String(entry)}`] : []
+    })
+  return properties.length === 0 ? undefined : properties.join(', ')
+}
+
+/** Format one Host failure for browser diagnostics without forwarding credentials or unbounded data. */
+export function formatErrorDetail(error: unknown): string {
+  const sections: string[] = []
+  const seen = new Set<object>()
+  let current: unknown = error
+  for (let depth = 0; current !== undefined && depth < MAX_ERROR_CAUSE_DEPTH; depth += 1) {
+    if (typeof current === 'object' && current !== null) {
+      if (seen.has(current)) {
+        sections.push('Caused by: [circular error cause]')
+        current = undefined
+        break
+      }
+      seen.add(current)
+    }
+    const prefix = depth === 0 ? '' : 'Caused by: '
+    if (current instanceof Error) {
+      const properties = errorProperties(current)
+      const rendered = current.stack ?? `${current.name}: ${current.message}`
+      sections.push(`${prefix}${rendered}${properties === undefined ? '' : `\n${properties}`}`)
+      current = current.cause
+      continue
+    }
+    sections.push(prefix + (typeof current === 'string'
+      ? current
+      : inspect(current, {
+        breakLength: 120,
+        compact: false,
+        customInspect: false,
+        depth: 4,
+        maxArrayLength: 40,
+        maxStringLength: 4096,
+        sorted: true,
+      })))
+    current = undefined
+    break
+  }
+  if (current !== undefined) sections.push('Caused by: [additional causes omitted]')
+  const redacted = redactErrorDetail(sections.join('\n'))
+  if (redacted.length <= MAX_ERROR_DETAIL_LENGTH) return redacted
+  return `${redacted.slice(0, MAX_ERROR_DETAIL_LENGTH)}\n[diagnostic truncated]`
+}
+
 /** One ownership-scoped browser authorization connection. */
 class OAuthConnection {
   private active: ActiveAttempt | undefined
@@ -166,7 +236,7 @@ class OAuthConnection {
       this.queue = this.queue.then(() => this.receive(raw.toString())).catch((error: unknown) => {
         this.ctx.logger.warn('dsh-oauth-adapter: command handling failed')
         this.ctx.logger.warn(error)
-        this.sendError('operation-failed', 'the OAuth operation failed')
+        this.sendError('operation-failed', 'the OAuth operation failed', undefined, undefined, formatErrorDetail(error))
       })
     })
     socket.on('close', () => {
@@ -200,11 +270,13 @@ class OAuthConnection {
     message: string,
     requestId?: string,
     attemptId?: string,
+    detail?: string,
   ): void {
     this.send({
       type: 'error', code, message,
       ...requestId === undefined ? {} : { requestId },
       ...attemptId === undefined ? {} : { attemptId },
+      ...detail === undefined ? {} : { detail },
     })
   }
 
@@ -281,7 +353,7 @@ class OAuthConnection {
     } catch (error) {
       this.ctx.logger.warn('dsh-oauth-adapter: credential status read failed')
       this.ctx.logger.warn(error)
-      this.sendError('operation-failed', 'account status is unavailable', requestId)
+      this.sendError('operation-failed', 'account status is unavailable', requestId, undefined, formatErrorDetail(error))
     }
   }
 
@@ -344,6 +416,7 @@ class OAuthConnection {
             'sign-in completed, but the OAuth model route could not be enabled',
             undefined,
             attempt.id,
+            formatErrorDetail(error),
           )
         }
       }
@@ -351,7 +424,7 @@ class OAuthConnection {
     }, (error: unknown) => {
       this.ctx.logger.warn('dsh-oauth-adapter: provider sign-in failed for %s', attempt.provider)
       this.ctx.logger.warn(error)
-      this.sendError('sign-in-failed', 'sign-in failed; inspect the DSH Host log', undefined, attempt.id)
+      this.sendError('sign-in-failed', 'sign-in failed', undefined, attempt.id, formatErrorDetail(error))
       this.finish(attempt, 'failed')
     })
   }
@@ -437,7 +510,7 @@ class OAuthConnection {
     } catch (error) {
       this.ctx.logger.warn('dsh-oauth-adapter: sign-out failed for %s', provider.id)
       this.ctx.logger.warn(error)
-      this.sendError('operation-failed', 'sign-out failed; inspect the DSH Host log', command.requestId)
+      this.sendError('operation-failed', 'sign-out failed', command.requestId, undefined, formatErrorDetail(error))
     }
   }
 

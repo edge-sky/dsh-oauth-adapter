@@ -25,6 +25,7 @@ export interface AttemptView {
   notice?: NoticeView
   prompt?: ActivePromptView
   error?: string
+  errorDetail?: string
 }
 
 export interface OAuthAccountsSnapshot {
@@ -32,6 +33,7 @@ export interface OAuthAccountsSnapshot {
   accounts: readonly AccountView[]
   attempt?: AttemptView
   error?: string
+  errorDetail?: string
 }
 
 type Listener = () => void
@@ -88,7 +90,7 @@ export class OAuthAccountsController {
 
   begin(provider: ProviderId): void {
     if (this.snapshot.attempt?.phase === 'starting' || this.snapshot.attempt?.phase === 'running') return
-    const { error: _error, ...current } = this.snapshot
+    const { error: _error, errorDetail: _errorDetail, ...current } = this.snapshot
     this.update({
       ...current,
       attempt: { provider, phase: 'starting' },
@@ -138,7 +140,7 @@ export class OAuthAccountsController {
     socket.addEventListener('open', () => {
       if (this.socket !== socket) return
       this.reconnectDelay = 500
-      const { error: _error, ...current } = this.snapshot
+      const { error: _error, errorDetail: _errorDetail, ...current } = this.snapshot
       this.update({ ...current, connection: 'open' })
       this.send({ type: 'refresh', requestId: crypto.randomUUID() })
     })
@@ -148,7 +150,9 @@ export class OAuthAccountsController {
       try {
         value = JSON.parse(event.data)
       } catch {
-        this.update({ ...this.snapshot, error: 'DSH returned an invalid OAuth message.' })
+        const next = { ...this.snapshot, error: 'DSH returned an invalid OAuth message.' }
+        delete next.errorDetail
+        this.update(next)
         return
       }
       if (isServerMessage(value)) this.receive(value)
@@ -161,14 +165,19 @@ export class OAuthAccountsController {
         return
       }
       const attempt = this.snapshot.attempt
-      this.update({
+      const interrupted = {
         ...this.snapshot,
         connection: 'reconnecting',
         error: 'The OAuth connection to DSH was interrupted.',
         ...attempt === undefined || attempt.phase === 'authorized' || attempt.phase === 'cancelled'
           ? {}
           : { attempt: { ...attempt, phase: 'failed', error: 'The OAuth connection to DSH was interrupted.' } },
-      })
+      } satisfies OAuthAccountsSnapshot
+      delete interrupted.errorDetail
+      if (interrupted.attempt?.error === 'The OAuth connection to DSH was interrupted.') {
+        delete interrupted.attempt.errorDetail
+      }
+      this.update(interrupted)
       const delay = this.reconnectDelay
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 5000)
       this.reconnectTimer = window.setTimeout(() => {
@@ -183,7 +192,9 @@ export class OAuthAccountsController {
 
   private send(command: ClientCommand): void {
     if (this.socket?.readyState !== WebSocket.OPEN) {
-      this.update({ ...this.snapshot, error: 'The OAuth connection to DSH is not ready.' })
+      const next = { ...this.snapshot, error: 'The OAuth connection to DSH is not ready.' }
+      delete next.errorDetail
+      this.update(next)
       return
     }
     this.socket.send(JSON.stringify(command))
@@ -200,7 +211,7 @@ export class OAuthAccountsController {
         this.update(nextSnapshot)
         return
       case 'started':
-        const { error: _error, ...current } = this.snapshot
+        const { error: _error, errorDetail: _errorDetail, ...current } = this.snapshot
         this.update({
           ...current,
           attempt: { id: message.attemptId, provider: message.provider, phase: 'running' },
@@ -248,9 +259,15 @@ export class OAuthAccountsController {
       case 'error': {
         const attempt = this.snapshot.attempt
         if (message.attemptId !== undefined && attempt?.id === message.attemptId) {
-          this.update({ ...this.snapshot, attempt: { ...attempt, error: message.message } })
+          const nextAttempt = { ...attempt, error: message.message }
+          if (message.detail === undefined) delete nextAttempt.errorDetail
+          else nextAttempt.errorDetail = message.detail
+          this.update({ ...this.snapshot, attempt: nextAttempt })
         } else {
-          this.update({ ...this.snapshot, error: message.message })
+          const next = { ...this.snapshot, error: message.message }
+          if (message.detail === undefined) delete next.errorDetail
+          else next.errorDetail = message.detail
+          this.update(next)
         }
         return
       }

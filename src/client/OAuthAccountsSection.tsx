@@ -83,6 +83,27 @@ function PromptForm(props: {
   )
 }
 
+function ErrorPanel(props: {
+  message: string
+  detail?: string
+  t: OAuthAccountsInjected['t']
+}): JSX.Element {
+  const collapsible = props.detail !== undefined && (props.detail.includes('\n') || props.detail.length > 240)
+  return (
+    <div className="dsh-oauth-error">
+      <p>{props.message}</p>
+      {props.detail !== undefined && (collapsible
+        ? (
+          <details className="dsh-oauth-error-details">
+            <summary>{props.t('technicalDetails')}</summary>
+            <pre>{props.detail}</pre>
+          </details>
+        )
+        : <pre>{props.detail}</pre>)}
+    </div>
+  )
+}
+
 function AttemptPanel(props: {
   attempt: AttemptView
   controller: OAuthAccountsController
@@ -130,7 +151,13 @@ function AttemptPanel(props: {
           t={props.t}
         />
       )}
-      {props.attempt.error !== undefined && <p className="dsh-oauth-error">{props.attempt.error}</p>}
+      {props.attempt.error !== undefined && (
+        <ErrorPanel
+          message={props.attempt.error}
+          {...props.attempt.errorDetail === undefined ? {} : { detail: props.attempt.errorDetail }}
+          t={props.t}
+        />
+      )}
       {props.attempt.id !== undefined && (props.attempt.phase === 'running' || props.attempt.phase === 'starting') && (
         <button className="dsh-oauth-button" type="button" onClick={() => { props.controller.cancel(props.attempt.id!) }}>
           {props.t('cancel')}
@@ -152,7 +179,13 @@ export function OAuthAccountsSection(props: OAuthAccountsSectionProps): JSX.Elem
     <section className="dsh-oauth-section">
       <h2 className="dsh-oauth-title">{t('title')}</h2>
       <p className="dsh-oauth-intro">{t('intro')}</p>
-      {snapshot.error !== undefined && <p className="dsh-oauth-error">{snapshot.error}</p>}
+      {snapshot.error !== undefined && (
+        <ErrorPanel
+          message={snapshot.error}
+          {...snapshot.errorDetail === undefined ? {} : { detail: snapshot.errorDetail }}
+          t={t}
+        />
+      )}
       {snapshot.connection !== 'open' && (
         <button className="dsh-oauth-button" data-variant="secondary" type="button" onClick={() => { controller.retry() }}>{t('retry')}</button>
       )}
