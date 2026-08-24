@@ -102,6 +102,14 @@ function promptView(prompt: AuthorizationPrompt, provider: ProviderId): PromptVi
   }
 }
 
+function providerPromptAnswer(prompt: AuthorizationPrompt, provider: ProviderId, value: string): string {
+  if (provider === 'github-copilot' && prompt.kind === 'text'
+    && prompt.message === GITHUB_DOMAIN_PROMPT && value.trim().length === 0) {
+    return 'github.com'
+  }
+  return value
+}
+
 /** Whether a socket address belongs to the local host. */
 export function isLoopbackAddress(address: string | undefined): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
@@ -448,7 +456,7 @@ class OAuthConnection {
         })
       }
       attempt.prompts.set(promptId, {
-        resolve: value => { finish(() => { resolve(value) }) },
+        resolve: value => { finish(() => { resolve(providerPromptAnswer(prompt, attempt.provider, value)) }) },
         reject: reason => { finish(() => { reject(reason) }) },
       })
       prompt.signal?.addEventListener('abort', withdraw, { once: true })

@@ -97,7 +97,7 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' 
             return { status: 'cancelled' as const }
           }
           const answer = await answerPromise
-          expect(answer).toBe(mode === 'github-domain' ? '' : 'private-answer')
+          expect(answer).toBe(mode === 'github-domain' ? 'github.com' : 'private-answer')
           configured.set(request.key, true)
           for (const listener of listeners.get('credentials/record-updated') ?? []) listener(request.key)
           return { status: 'authorized' as const }
@@ -226,7 +226,7 @@ describe('OAuth Host surface', () => {
     await waitFor(() => test.messages.find(message => message.type === 'settled' && message.status === 'cancelled'))
   })
 
-  it('marks the GitHub domain prompt as accepting the github.com default', async () => {
+  it('turns a blank GitHub domain into the JSON-safe github.com default', async () => {
     const test = await harness('github-domain')
     send(test.client, { type: 'begin', requestId: 'begin', provider: 'github-copilot' })
     const started = await waitFor(() => test.messages.find(message => message.type === 'started'))
