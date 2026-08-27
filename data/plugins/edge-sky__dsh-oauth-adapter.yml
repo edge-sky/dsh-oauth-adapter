@@ -1,0 +1,6 @@
+url: https://github.com/edge-sky/dsh-oauth-adapter
+name: edge-sky/dsh-oauth-adapter
+category: identity
+description:
+  en: 'OAuth integration for @deepseek-ai/dsh-llm-pi-ai by using pi-ai authorization flows, currently supporting: OpenAI Codex, GitHub Copilot.'
+  zh: '基于 pi-ai 的 OAuth 能力并适配 @deepseek-ai/dsh-llm-pi-ai，当前已支持： OpenAI Codex、 GitHub Copilot。'

@@ -25,17 +25,22 @@ describe('DSH Bundle', () => {
     )
   })
 
-  it('permits newer compatible DSH runtimes without an upper version bound', () => {
+  it('uses bounded DSH peers and requires the authorization implementation', () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
       peerDependencies?: Record<string, string>
+      peerDependenciesMeta?: Record<string, { optional?: boolean }>
     }
     const peers = manifest.peerDependencies ?? {}
     for (const [name, range] of Object.entries(peers)) {
-      expect(range, name).not.toMatch(/[<~^]/)
-      expect(range, name).toMatch(/^>=/)
+      if (name.startsWith('@deepseek-ai/dsh-')) {
+        expect(range, name).toBe('>=0.1.1-rc.2 <0.2.0-0')
+      }
     }
-    expect(manifest.dependencies?.['@deepseek-ai/dsh-authorization']).toBe('>=0.1.1-rc.2')
+    expect(manifest.dependencies?.['@deepseek-ai/dsh-authorization']).toBeUndefined()
+    expect(manifest.devDependencies?.['@deepseek-ai/dsh-authorization']).toBe('0.1.1-rc.2')
+    expect(manifest.peerDependenciesMeta?.['@deepseek-ai/dsh-authorization']).toBeUndefined()
   })
 
   it('builds both Host and browser artifacts without the removed compatibility bridge', () => {
