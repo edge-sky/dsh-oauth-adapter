@@ -35,7 +35,9 @@ Start DSH:
 npx @deepseek-ai/dsh web
 ```
 
-<img width="2270" height="1524" alt="image" src="https://github.com/user-attachments/assets/78a59190-8029-4c60-bc50-b763312540f7" />
+<img width="2940" height="1766" alt="image" src="https://github.com/user-attachments/assets/cbd98703-ee7a-491b-aa2f-02e42b99f6b9" />
+
+
 
 <img width="2270" height="1524" alt="image" src="https://github.com/user-attachments/assets/e0cc6591-73a4-4e87-9ef6-68950126b290" />
 
