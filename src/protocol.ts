@@ -78,6 +78,8 @@ export type ServerMessage =
     attemptId?: string
     code: OAuthErrorCode
     message: string
+    /** Bounded, credential-redacted Host diagnostic for optional UI expansion. */
+    detail?: string
   }
 
 export type CommandParseResult =

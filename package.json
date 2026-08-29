@@ -1,7 +1,7 @@
 {
   "name": "@edge-sky/dsh-oauth-adapter",
   "description": "Web OAuth account surface for official DSH authorization flows",
-  "version": "0.1.1-rc.9",
+  "version": "0.1.1-rc.12",
   "author": {
     "name": "edge-sky",
     "url": "https://github.com/edge-sky"
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/edge-sky/dsh-oauth.git"
+    "url": "git+https://github.com/edge-sky/dsh-oauth-adapter.git"
   },
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -68,16 +68,17 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1",
-    "@deepseek-ai/dsh-client-locale": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-runtime": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-credentials": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-invariants": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-llm": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.1-rc.2",
-    "@deepseek-ai/dsh-settings": ">=0.1.1-rc.2",
+    "@deepseek-ai/dsh-authorization": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-client-runtime": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-credentials": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-invariants": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-llm": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.1-rc.2 <0.2.0-0",
+    "@deepseek-ai/dsh-settings": ">=0.1.1-rc.2 <0.2.0-0",
     "react": ">=18.2.0"
   },
   "peerDependenciesMeta": {
@@ -119,12 +120,12 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-authorization": ">=0.1.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-authorization": "0.1.1-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.1.1-rc.2",
     "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.2",
     "@deepseek-ai/dsh-client-ui-settings": "0.1.1-rc.2",

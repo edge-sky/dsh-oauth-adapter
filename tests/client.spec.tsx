@@ -74,11 +74,15 @@ describe('OAuth Accounts settings page', () => {
       attempt: {
         id: 'attempt', provider: 'github-copilot', phase: 'failed',
         error: 'Sign-in failed safely',
+        errorDetail: 'Error: provider rejected the request\n    at login (oauth.js:1:1)',
       },
     })
     expect(reconnecting).toContain('Retry connection')
     expect(reconnecting).toContain('Sign-in failed.')
     expect(reconnecting).toContain('Sign-in failed safely')
+    expect(reconnecting).toContain('<details class="dsh-oauth-error-details">')
+    expect(reconnecting).toContain('Technical details')
+    expect(reconnecting).toContain('provider rejected the request')
 
     const cancelled = render({
       connection: 'open',

@@ -4,7 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { recordKeyFor } from '@deepseek-ai/dsh-llm-pi-ai'
 import WebSocket from 'ws'
 import { afterEach, describe, expect, it } from 'vitest'
-import { acceptsBrowserUpgrade, apply, isLoopbackAddress, safeNoticeUrl } from '../lib/index.js'
+import { acceptsBrowserUpgrade, apply, formatErrorDetail, isLoopbackAddress, safeNoticeUrl } from '../lib/index.js'
 import { MAX_FRAME_BYTES, OAUTH_SOCKET_PATH, OAUTH_SOCKET_PROTOCOL } from '../lib/protocol.js'
 import type { ServerMessage } from '../lib/protocol.js'
 
@@ -49,7 +49,7 @@ async function connect(port: number): Promise<{ client: WebSocket; messages: Ser
   return { client, messages }
 }
 
-async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' = 'prompt'): Promise<Harness> {
+async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' | 'failure' = 'prompt'): Promise<Harness> {
   const root = new Context()
   const configured = new Map<string, boolean>()
   const deleted: string[] = []
@@ -73,6 +73,11 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' 
           request.interaction.notify({
             message: 'Continue in the browser', url: 'https://example.test/login', code: 'ABCD',
           })
+          if (mode === 'failure') {
+            const cause = new Error('429 Too Many Requests; Authorization: Bearer secret-token-value')
+            Object.assign(cause, { code: 'COPILOT_RATE_LIMITED', status: 429 })
+            throw new Error('GitHub Copilot login failed', { cause })
+          }
           if (mode === 'cancel') {
             await new Promise<void>((resolve) => {
               request.signal.addEventListener('abort', () => { aborts.count += 1; resolve() }, { once: true })
@@ -92,7 +97,7 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' 
             return { status: 'cancelled' as const }
           }
           const answer = await answerPromise
-          expect(answer).toBe(mode === 'github-domain' ? '' : 'private-answer')
+          expect(answer).toBe(mode === 'github-domain' ? 'github.com' : 'private-answer')
           configured.set(request.key, true)
           for (const listener of listeners.get('credentials/record-updated') ?? []) listener(request.key)
           return { status: 'authorized' as const }
@@ -221,7 +226,7 @@ describe('OAuth Host surface', () => {
     await waitFor(() => test.messages.find(message => message.type === 'settled' && message.status === 'cancelled'))
   })
 
-  it('marks the GitHub domain prompt as accepting the github.com default', async () => {
+  it('turns a blank GitHub domain into the JSON-safe github.com default', async () => {
     const test = await harness('github-domain')
     send(test.client, { type: 'begin', requestId: 'begin', provider: 'github-copilot' })
     const started = await waitFor(() => test.messages.find(message => message.type === 'started'))
@@ -301,6 +306,21 @@ describe('OAuth Host surface', () => {
     expect(test.messages.some(message => message.type === 'started')).toBe(false)
   })
 
+  it('returns a bounded redacted provider error detail to the owning browser', async () => {
+    const test = await harness('failure')
+    send(test.client, { type: 'begin', requestId: 'begin', provider: 'github-copilot' })
+    const failure = await waitFor(() => test.messages.find(message => message.type === 'error'))
+    expect(failure).toMatchObject({
+      type: 'error', code: 'sign-in-failed', message: 'sign-in failed',
+    })
+    if (failure.type !== 'error') throw new Error('unexpected message')
+    expect(failure.detail).toContain('GitHub Copilot login failed')
+    expect(failure.detail).toContain('429 Too Many Requests')
+    expect(failure.detail).toContain('code: COPILOT_RATE_LIMITED, status: 429')
+    expect(failure.detail).toContain('Authorization: [REDACTED]')
+    expect(failure.detail).not.toContain('secret-token-value')
+  })
+
   it('closes oversized frames and refuses an attacker Origin', async () => {
     const test = await harness()
     const closed = new Promise<number>(resolve => test.client.once('close', code => { resolve(code) }))
@@ -342,5 +362,19 @@ describe('loopback handshake fence', () => {
     expect(safeNoticeUrl('https://example.test/login')).toBe('https://example.test/login')
     expect(safeNoticeUrl('javascript:alert(1)')).toBeUndefined()
     expect(safeNoticeUrl('not a URL')).toBeUndefined()
+  })
+})
+
+describe('Host error diagnostics', () => {
+  it('redacts credential forms and truncates oversized details', () => {
+    const detail = formatErrorDetail(new Error(
+      `access_token=oauth-secret api_key: sk-${'x'.repeat(32)} ${'z'.repeat(20_000)}`,
+    ))
+    expect(detail).toContain('access_token=[REDACTED]')
+    expect(detail).toContain('api_key: [REDACTED]')
+    expect(detail).not.toContain('oauth-secret')
+    expect(detail).not.toContain(`sk-${'x'.repeat(32)}`)
+    expect(detail).toContain('[diagnostic truncated]')
+    expect(detail.length).toBeLessThan(13 * 1024)
   })
 })
