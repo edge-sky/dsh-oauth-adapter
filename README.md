@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-An OAuth account page for the DSH Web profile. With the pi-ai catalog bundled by DSH `0.1.1-rc.2`, it supports:
+An OAuth account page for the DSH Web profile. It supports:
 
 | Provider | pi-ai sign-in path |
 | --- | --- |
@@ -11,7 +11,6 @@ An OAuth account page for the DSH Web profile. With the pi-ai catalog bundled by
 | Anthropic | Browser callback with manual code/redirect fallback |
 | Kimi For Coding | Device code |
 | OpenRouter | Browser PKCE callback |
-| Radius | Browser PKCE callback or device code |
 | xAI | Device code |
 
 Each account is shown only as available when the installed `@deepseek-ai/dsh-llm-pi-ai` actually registers its OAuth flow. This keeps older or differently bundled pi-ai versions fail-closed instead of exposing a login button that cannot work.
@@ -47,4 +46,4 @@ DSH integrates pi-ai through the `@deepseek-ai/dsh-llm-pi-ai` adapter, but does 
 
 Because DSH does not currently mount the `ctx.authorization` service, this plugin also mounts it manually.
 
-The plugin itself does not implement provider OAuth protocols, manage OAuth credentials, or maintain login state. pi-ai owns login and token refresh; the DSH Credentials Service owns persistence; this adapter owns only the local Web UI bridge and model-route activation.
+The plugin itself does not manage OAuth credentials or maintain login state. Maybe DSH support this sign-in method in the future; but for now, this plugin lets you enjoy it.

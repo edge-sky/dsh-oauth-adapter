@@ -20,7 +20,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 const NS = 'settings.oauth-accounts'
-
 /** Required browser services for settings placement and localized copy. */
 export const inject = ['slots', 'locale']
 

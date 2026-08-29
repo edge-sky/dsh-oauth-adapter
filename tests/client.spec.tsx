@@ -49,7 +49,7 @@ describe('OAuth Accounts settings page', () => {
   it('renders every supported provider from the shared catalog', () => {
     const html = render({ connection: 'open', accounts: [] })
     for (const provider of [
-      'openai-codex', 'github-copilot', 'anthropic', 'kimi-coding', 'openrouter', 'radius', 'xai',
+      'openai-codex', 'github-copilot', 'anthropic', 'kimi-coding', 'openrouter', 'xai',
     ]) {
       expect(html).toContain(provider)
     }

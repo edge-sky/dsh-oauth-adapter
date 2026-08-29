@@ -9,7 +9,6 @@ describe('OAuth wire parser', () => {
       'anthropic',
       'kimi-coding',
       'openrouter',
-      'radius',
       'xai',
     ])
   })

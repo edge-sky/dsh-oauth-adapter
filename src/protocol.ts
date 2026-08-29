@@ -27,10 +27,6 @@ export const PROVIDERS = [
     modelGroupLabel: 'OpenRouter (OAuth)',
   },
   {
-    id: 'radius', key: 'llm-pi-ai/radius', fallbackLabel: 'Radius',
-    modelGroupLabel: 'Radius (OAuth)',
-  },
-  {
     id: 'xai', key: 'llm-pi-ai/xai', fallbackLabel: 'xAI',
     modelGroupLabel: 'xAI (OAuth)',
   },
