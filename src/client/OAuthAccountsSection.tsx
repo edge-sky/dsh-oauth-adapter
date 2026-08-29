@@ -2,7 +2,7 @@
 
 import { useState, useSyncExternalStore } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ProviderId } from '../protocol.js'
+import { PROVIDERS } from '../protocol.js'
 import type { OAuthLocaleKey } from './locales.js'
 import type { ActivePromptView, AttemptView, OAuthAccountsController } from './store.js'
 
@@ -174,7 +174,6 @@ export function OAuthAccountsSection(props: OAuthAccountsSectionProps): JSX.Elem
   if (controller === undefined || t === undefined) return null
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   const accountByProvider = new Map(snapshot.accounts.map(account => [account.provider, account]))
-  const providers: readonly ProviderId[] = ['openai-codex', 'github-copilot']
   return (
     <section className="dsh-oauth-section">
       <h2 className="dsh-oauth-title">{t('title')}</h2>
@@ -191,7 +190,7 @@ export function OAuthAccountsSection(props: OAuthAccountsSectionProps): JSX.Elem
       )}
       {snapshot.accounts.length === 0 && <p className="dsh-oauth-muted">{t('loading')}</p>}
       <ul className="dsh-oauth-list">
-        {providers.map((provider) => {
+        {PROVIDERS.map(({ id: provider }) => {
           const account = accountByProvider.get(provider)
           const attempt = snapshot.attempt?.provider === provider ? snapshot.attempt : undefined
           const busy = account?.inFlight === true || attempt?.phase === 'running' || attempt?.phase === 'starting'

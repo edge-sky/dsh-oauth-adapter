@@ -14,6 +14,26 @@ export const PROVIDERS = [
     id: 'github-copilot', key: 'llm-pi-ai/github-copilot', fallbackLabel: 'GitHub Copilot',
     modelGroupLabel: 'GitHub Copilot (OAuth)',
   },
+  {
+    id: 'anthropic', key: 'llm-pi-ai/anthropic', fallbackLabel: 'Anthropic',
+    modelGroupLabel: 'Anthropic (OAuth)',
+  },
+  {
+    id: 'kimi-coding', key: 'llm-pi-ai/kimi-coding', fallbackLabel: 'Kimi For Coding',
+    modelGroupLabel: 'Kimi For Coding (OAuth)',
+  },
+  {
+    id: 'openrouter', key: 'llm-pi-ai/openrouter', fallbackLabel: 'OpenRouter',
+    modelGroupLabel: 'OpenRouter (OAuth)',
+  },
+  {
+    id: 'radius', key: 'llm-pi-ai/radius', fallbackLabel: 'Radius',
+    modelGroupLabel: 'Radius (OAuth)',
+  },
+  {
+    id: 'xai', key: 'llm-pi-ai/xai', fallbackLabel: 'xAI',
+    modelGroupLabel: 'xAI (OAuth)',
+  },
 ] as const
 
 export type ProviderId = (typeof PROVIDERS)[number]['id']

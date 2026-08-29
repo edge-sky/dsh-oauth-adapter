@@ -5,7 +5,7 @@ import { recordKeyFor } from '@deepseek-ai/dsh-llm-pi-ai'
 import WebSocket from 'ws'
 import { afterEach, describe, expect, it } from 'vitest'
 import { acceptsBrowserUpgrade, apply, formatErrorDetail, isLoopbackAddress, safeNoticeUrl } from '../lib/index.js'
-import { MAX_FRAME_BYTES, OAUTH_SOCKET_PATH, OAUTH_SOCKET_PROTOCOL } from '../lib/protocol.js'
+import { MAX_FRAME_BYTES, OAUTH_SOCKET_PATH, OAUTH_SOCKET_PROTOCOL, PROVIDERS } from '../lib/protocol.js'
 import type { ServerMessage } from '../lib/protocol.js'
 
 interface Harness {
@@ -181,6 +181,13 @@ function send(client: WebSocket, value: object): void {
 }
 
 describe('OAuth Host surface', () => {
+  it('projects every supported pi-ai OAuth provider', async () => {
+    const test = await harness()
+    const snapshot = test.messages.find(message => message.type === 'snapshot')
+    if (snapshot?.type !== 'snapshot') throw new Error('missing snapshot')
+    expect(snapshot.accounts.map(account => account.provider)).toEqual(PROVIDERS.map(provider => provider.id))
+  })
+
   it('projects status, relays a secret prompt, settles, and signs out without echoing the answer', async () => {
     const test = await harness()
     send(test.client, { type: 'begin', requestId: 'begin', provider: 'openai-codex' })

@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_ANSWER_LENGTH, parseClientCommand } from '../lib/protocol.js'
+import { MAX_ANSWER_LENGTH, PROVIDERS, parseClientCommand } from '../lib/protocol.js'
 
 describe('OAuth wire parser', () => {
+  it('offers every OAuth provider shipped by the supported pi-ai catalog', () => {
+    expect(PROVIDERS.map(provider => provider.id)).toEqual([
+      'openai-codex',
+      'github-copilot',
+      'anthropic',
+      'kimi-coding',
+      'openrouter',
+      'radius',
+      'xai',
+    ])
+  })
+
   it('accepts every command without preserving unrelated fields', () => {
     expect(parseClientCommand(JSON.stringify({ type: 'refresh', requestId: 'r-1' }))).toEqual({
       ok: true, value: { type: 'refresh', requestId: 'r-1' },

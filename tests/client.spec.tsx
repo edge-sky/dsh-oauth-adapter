@@ -46,6 +46,15 @@ describe('OAuth Accounts settings page', () => {
     expect(html).toContain('OAuth is unavailable')
   })
 
+  it('renders every supported provider from the shared catalog', () => {
+    const html = render({ connection: 'open', accounts: [] })
+    for (const provider of [
+      'openai-codex', 'github-copilot', 'anthropic', 'kimi-coding', 'openrouter', 'radius', 'xai',
+    ]) {
+      expect(html).toContain(provider)
+    }
+  })
+
   it('renders device instructions and a masked prompt', () => {
     const html = render({
       connection: 'open',

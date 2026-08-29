@@ -2,10 +2,19 @@
 
 [English](README.md) | 中文
 
-为 DSH Web profile 提供独立的 OAuth 账户页面。当前支持：
+为 DSH Web profile 提供独立的 OAuth 账户页面。配合 DSH `0.1.1-rc.2` 内置的 pi-ai catalog，当前支持：
 
-- [x] OpenAI Codex
-- [x] GitHub Copilot
+| 提供商 | pi-ai 登录路径 |
+| --- | --- |
+| OpenAI Codex | 浏览器回调或设备码 |
+| GitHub Copilot | GitHub 或 GitHub Enterprise 设备码 |
+| Anthropic | 浏览器回调，并支持手工粘贴授权码/重定向地址 |
+| Kimi For Coding | 设备码 |
+| OpenRouter | 浏览器 PKCE 回调 |
+| Radius | 浏览器 PKCE 回调或设备码 |
+| xAI | 设备码 |
+
+只有当当前安装的 `@deepseek-ai/dsh-llm-pi-ai` 确实注册了对应 OAuth 流程时，账户才会显示为可用。这样旧版或采用不同 pi-ai bundle 的 DSH 会安全地禁用登录按钮，而不会暴露无法完成的流程。
 
 当前仅对 DSH`0.1.1-rc.2`进行了测试，不保证未来版本的兼容性
 
@@ -34,8 +43,8 @@ npx @deepseek-ai/dsh web
 
 ## 工作原理
 
-DSH 通过 `@deepseek-ai/dsh-llm-pi-ai` 适配器接入 pi-ai，但并没有提供 OAuth 的入口。`@edge-sky/dsh-oauth-adapter` 将 pi-ai 已有的 Codex 与 Copilot 登录流程注册到 DSH Authorization Service。
+DSH 通过 `@deepseek-ai/dsh-llm-pi-ai` 适配器接入 pi-ai，但并没有提供 OAuth 的入口。`@edge-sky/dsh-oauth-adapter` 通过 DSH Authorization Service 暴露 pi-ai 已有的 provider 登录流程。浏览器链接、设备码、文本与密码输入、登录方式选择、取消和撤回提示均通过同一套 provider-neutral 传输完成。
 
 由于 DSH 目前并没有挂载`ctx.authorization`服务，因此该插件同时手动对其进行了挂载
 
-插件本身并不承担 OAuth 凭证管理与维持登录态的职责，或许将来 DSH 会官方支持这一登录方式，但至少现在你可以通过这个插件体验它
+插件本身不实现各提供商的 OAuth 协议，也不管理 OAuth 凭证或维持登录态。登录与 token 刷新由 pi-ai 负责，持久化由 DSH Credentials Service 负责，本适配器只负责本机 Web UI 桥接和模型路由启用。
