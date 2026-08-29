@@ -1,7 +1,7 @@
 {
   "name": "@edge-sky/dsh-oauth-adapter",
   "description": "Web OAuth account surface for official DSH authorization flows",
-  "version": "0.1.1-rc.13",
+  "version": "0.1.2-beta.0",
   "author": {
     "name": "edge-sky",
     "url": "https://github.com/edge-sky"
