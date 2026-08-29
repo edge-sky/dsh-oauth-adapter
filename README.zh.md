@@ -35,7 +35,8 @@ npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 npx @deepseek-ai/dsh web
 ```
 
-<img width="2270" height="1524" alt="image" src="https://github.com/user-attachments/assets/134ec856-e17b-4800-bb87-069851986d3e" />
+<img width="2940" height="1766" alt="image" src="https://github.com/user-attachments/assets/7f1dc846-9cea-468c-8a1e-27f4fa34a4fe" />
+
 
 <img width="2270" height="1524" alt="image" src="https://github.com/user-attachments/assets/8007002a-a036-4cf4-b015-d4e50eff25d9" />
 
