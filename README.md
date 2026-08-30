@@ -48,5 +48,5 @@ Because DSH does not currently mount the `ctx.authorization` service, this plugi
 
 The plugin itself does not manage OAuth credentials or maintain login state. Maybe DSH support this sign-in method in the future; but for now, this plugin lets you enjoy it.
 
-If this plugins is has helped you, please give a star for me, and create issues if you have any suggestion~
+If this plugins is has helped you, please give a star for me, or create issues if you have any suggestion~
 
