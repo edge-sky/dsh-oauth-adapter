@@ -7,6 +7,8 @@ import type {
   AccountView, ClientCommand, PromptView, ProviderId, ServerMessage,
 } from '../protocol.js'
 
+import type { ModelPage, ModelCommand, ManualModel } from '../model-types.js'
+
 export interface NoticeView {
   message: string
   url?: string
@@ -31,6 +33,9 @@ export interface AttemptView {
 export interface OAuthAccountsSnapshot {
   connection: 'connecting' | 'open' | 'reconnecting' | 'closed'
   accounts: readonly AccountView[]
+  modelPages?: Partial<Record<ProviderId, ModelPage>>
+  modelBusy?: Partial<Record<ProviderId, boolean>>
+  modelErrors?: Partial<Record<ProviderId, { code: string; message: string }>>
   attempt?: AttemptView
   error?: string
   errorDetail?: string
@@ -76,6 +81,9 @@ export class OAuthAccountsController {
   private reconnectTimer: number | undefined
   private reconnectDelay = 500
   private disposed = false
+  private modelsVisible = false
+  private readonly modelRequests = new Map<string, { provider: ProviderId; write: boolean }>()
+  private readonly latestModelReads = new Map<ProviderId, string>()
 
   constructor() {
     this.connect()
@@ -116,6 +124,33 @@ export class OAuthAccountsController {
     this.send({ type: 'forget', requestId: crypto.randomUUID(), provider })
   }
 
+  loadModels(): void {
+    this.modelsVisible = true
+    for (const provider of this.snapshot.accounts) this.readModels(provider.provider)
+  }
+
+  readModels(provider: ProviderId, offset = 0): void {
+    if (this.snapshot.connection !== 'open') return
+    const requestId = crypto.randomUUID()
+    this.latestModelReads.set(provider, requestId)
+    this.modelRequests.set(requestId, { provider, write: false })
+    this.send({ type: 'models-list', requestId, provider, offset })
+  }
+
+  syncModels(provider: ProviderId): void { this.writeModels(provider, { type: 'models-sync' }) }
+  migrateModels(provider: ProviderId): void { this.writeModels(provider, { type: 'models-migrate' }) }
+  saveModel(provider: ProviderId, model: ManualModel): void { this.writeModels(provider, { type: 'models-save', model }) }
+  deleteModel(provider: ProviderId, id: string): void { this.writeModels(provider, { type: 'models-delete', id }) }
+
+  private writeModels(provider: ProviderId, operation: { type: 'models-sync' | 'models-migrate' } | { type: 'models-save'; model: ManualModel } | { type: 'models-delete'; id: string }): void {
+    const page = this.snapshot.modelPages?.[provider]
+    if (!page || this.snapshot.modelBusy?.[provider] || this.snapshot.connection !== 'open') return
+    const requestId = crypto.randomUUID()
+    this.modelRequests.set(requestId, { provider, write: true })
+    this.update({ ...this.snapshot, modelBusy: { ...this.snapshot.modelBusy, [provider]: true }, modelErrors: { ...this.snapshot.modelErrors, [provider]: undefined } })
+    this.send({ ...operation, requestId, provider, revision: page.revision } as ModelCommand)
+  }
+
   retry(): void {
     if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) return
     if (this.reconnectTimer !== undefined) window.clearTimeout(this.reconnectTimer)
@@ -142,6 +177,9 @@ export class OAuthAccountsController {
       this.reconnectDelay = 500
       const { error: _error, errorDetail: _errorDetail, ...current } = this.snapshot
       this.update({ ...current, connection: 'open' })
+      this.modelRequests.clear()
+      this.latestModelReads.clear()
+      this.update({ ...this.snapshot, modelBusy: {} })
       this.send({ type: 'refresh', requestId: crypto.randomUUID() })
     })
     socket.addEventListener('message', (event) => {
@@ -202,6 +240,33 @@ export class OAuthAccountsController {
 
   private receive(message: ServerMessage): void {
     switch (message.type) {
+      case 'models-changed':
+        if (this.modelsVisible) this.readModels(message.provider, this.snapshot.modelPages?.[message.provider]?.offset ?? 0)
+        return
+      case 'models-page': {
+        const request = this.modelRequests.get(message.requestId)
+        this.modelRequests.delete(message.requestId)
+        if (!request) return
+        if (!request.write && this.latestModelReads.get(request.provider) !== message.requestId) return
+        const current = this.snapshot.modelPages?.[request.provider]
+        if (current && message.page.revision < current.revision) {
+          if (request.write) this.update({ ...this.snapshot, modelBusy: { ...this.snapshot.modelBusy, [request.provider]: false } })
+          return
+        }
+        this.update({ ...this.snapshot, modelPages: { ...this.snapshot.modelPages, [request.provider]: message.page },
+          modelBusy: { ...this.snapshot.modelBusy, ...(request.write ? { [request.provider]: false } : {}) } })
+        return
+      }
+      case 'models-error': {
+        const request = this.modelRequests.get(message.requestId)
+        this.modelRequests.delete(message.requestId)
+        if (!request) return
+        if (!request.write && this.latestModelReads.get(request.provider) !== message.requestId) return
+        this.update({ ...this.snapshot, modelBusy: { ...this.snapshot.modelBusy, ...(request.write ? { [request.provider]: false } : {}) },
+          modelErrors: { ...this.snapshot.modelErrors, [request.provider]: { code: message.code, message: message.message } } })
+        if (request.write) this.readModels(request.provider)
+        return
+      }
       case 'snapshot':
         const accounts = [...message.accounts]
         const reconciled = reconcileAttemptView(this.snapshot.attempt, accounts)
@@ -209,6 +274,7 @@ export class OAuthAccountsController {
         if (reconciled === undefined) delete nextSnapshot.attempt
         else nextSnapshot.attempt = reconciled
         this.update(nextSnapshot)
+        if (this.modelsVisible) for (const account of accounts) this.readModels(account.provider, this.snapshot.modelPages?.[account.provider]?.offset ?? 0)
         return
       case 'started':
         const { error: _error, errorDetail: _errorDetail, ...current } = this.snapshot

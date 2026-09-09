@@ -4,15 +4,17 @@
  * @module @edge-sky/dsh-oauth-adapter
  */
 
+import { OAuthModelService, type ModelContext } from './model-service.js'
+import { ModelOperationError } from './model-discovery.js'
+import type { ModelCommand } from './model-types.js'
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { inspect } from 'node:util'
-import type { Context } from '@deepseek-ai/cordis'
 import type { AuthorizationPrompt, AuthorizationService } from '@deepseek-ai/dsh-authorization'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
-import { settingsNamespace, type SettingsProvider } from '@deepseek-ai/dsh-settings'
+import { type SettingsProvider } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import WebSocket, { WebSocketServer } from 'ws'
 import type { RawData } from 'ws'
@@ -27,21 +29,28 @@ import type {
 export interface Config {
   /** Emit secret-free transport lifecycle diagnostics. */
   debug?: boolean
+  modelSyncTimeoutMs?: number
+  modelSyncMaxResponseBytes?: number
+  modelSyncMaxPages?: number
+  codexClientVersion?: string
 }
 
 /** Runtime-validated plugin configuration. */
 export const Config: z<Config> = z.object({
   debug: z.boolean().default(false),
+  modelSyncTimeoutMs: z.number().min(1).max(2147483647).step(1).default(30000),
+  modelSyncMaxResponseBytes: z.number().min(1024).step(1).default(4194304),
+  modelSyncMaxPages: z.number().min(1).max(1000).step(1).default(100),
+  codexClientVersion: z.string().default('0.149.0'),
 })
 
 /** Cordis plugin name. */
 export const name = 'dsh-oauth-adapter'
 /** Official services required by the OAuth account surface. */
-export const inject = ['authorization', 'credentials', 'settings', 'webServer']
+export const inject = ['authorization', 'credentials', 'settings', 'webServer', 'llm']
 
-const MODEL_SETTINGS_NS = settingsNamespace('llm-pi-ai')
 
-type OAuthContext = Context & {
+type OAuthContext = ModelContext & {
   authorization: AuthorizationService
   credentials: CredentialProvider
   settings: SettingsProvider
@@ -65,25 +74,6 @@ function providerMeta(providerId: ProviderId): (typeof PROVIDERS)[number] {
   const provider = PROVIDERS.find(candidate => candidate.id === providerId)
   if (provider === undefined) throw new Error(`unsupported provider: ${providerId}`)
   return provider
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function modelRouteEnabled(settings: SettingsProvider, provider: ProviderId): boolean {
-  const section = settings.get(MODEL_SETTINGS_NS)
-  if (!isRecord(section) || !isRecord(section.providers)) return false
-  return Object.hasOwn(section.providers, provider)
-}
-
-function pluginOwnsModelRoute(settings: SettingsProvider, provider: (typeof PROVIDERS)[number]): boolean {
-  const descriptor = settings.describe().find(candidate => candidate.ns === MODEL_SETTINGS_NS)
-  if (!isRecord(descriptor?.user) || !isRecord(descriptor.user.providers)) return false
-  const profile = descriptor.user.providers[provider.id]
-  return isRecord(profile)
-    && Object.keys(profile).length === 1
-    && profile.displayName === provider.modelGroupLabel
 }
 
 const GITHUB_DOMAIN_PROMPT = 'GitHub Enterprise URL/domain (blank for github.com)'
@@ -228,12 +218,14 @@ class OAuthConnection {
   private active: ActiveAttempt | undefined
   private queue = Promise.resolve()
   private closed = false
+  private readonly tasks = new Set<Promise<unknown>>()
 
   constructor(
     private readonly ctx: OAuthContext,
     private readonly socket: WebSocket,
     private readonly debug: (message: string) => void,
     private readonly changed: () => void,
+    private readonly models: OAuthModelService,
   ) {
     socket.on('message', (raw, isBinary) => {
       if (isBinary || rawLength(raw) > MAX_FRAME_BYTES) {
@@ -259,18 +251,27 @@ class OAuthConnection {
     void this.sendSnapshot()
   }
 
+  modelChanged(provider: ProviderId): void { this.send({ type: 'models-changed', provider }) }
+
   refresh(): void {
     void this.sendSnapshot()
   }
 
-  dispose(): void {
+  private track(task: Promise<unknown>): void {
+    this.tasks.add(task)
+    void task.finally(() => this.tasks.delete(task)).catch(() => {})
+  }
+
+  async dispose(): Promise<void> {
     this.closed = true
     this.withdrawActive('OAuth surface stopped')
     this.socket.terminate()
+    await this.queue
+    await Promise.allSettled([...this.tasks])
   }
 
   private send(message: ServerMessage): void {
-    if (this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message))
+    if (!this.closed && this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message))
   }
 
   private sendError(
@@ -289,6 +290,7 @@ class OAuthConnection {
   }
 
   private async receive(raw: string): Promise<void> {
+    if (this.closed) return
     const parsed = parseClientCommand(raw)
     if (!parsed.ok) {
       this.sendError(
@@ -302,6 +304,10 @@ class OAuthConnection {
   }
 
   private async handle(command: ClientCommand): Promise<void> {
+    if (command.type.startsWith('models-')) {
+      this.track(this.handleModels(command as ModelCommand))
+      return
+    }
     switch (command.type) {
       case 'refresh':
         await this.sendSnapshot(command.requestId)
@@ -320,38 +326,34 @@ class OAuthConnection {
     }
   }
 
-  private async account(provider: (typeof PROVIDERS)[number]): Promise<AccountView> {
-    const entry = this.ctx.authorization.describe(provider.key as never)
-    const credential = await this.ctx.credentials.describeRecord(provider.key as never)
-    let modelsEnabled = modelRouteEnabled(this.ctx.settings, provider.id)
-    if (credential.configured && !modelsEnabled && this.ctx.settings.writable) {
-      try {
-        modelsEnabled = await this.enableModelRoute(provider)
-      } catch (error) {
-        this.ctx.logger.warn('dsh-oauth-adapter: model route activation failed for %s', provider.id)
-        this.ctx.logger.warn(error)
+  private async handleModels(command: ModelCommand): Promise<void> {
+    try {
+      switch (command.type) {
+        case 'models-list': break
+        case 'models-sync': await this.models.sync(command.provider, command.revision); break
+        case 'models-migrate': await this.models.migrate(command.provider, command.revision); break
+        case 'models-save': await this.models.saveManual(command.provider, command.model, command.revision); break
+        case 'models-delete': await this.models.deleteManual(command.provider, command.id, command.revision); break
       }
-    }
-    return {
-      provider: provider.id,
-      label: entry?.label ?? provider.fallbackLabel,
-      available: entry?.methods.some(method => method.id === 'oauth') === true,
-      configured: credential.configured,
-      modelsEnabled,
-      writable: credential.writable,
-      inFlight: entry?.inFlight ?? false,
+      if (!this.closed) this.send({ type: 'models-page', requestId: command.requestId,
+        page: await this.models.page(command.provider, command.type === 'models-list' ? command.offset : 0) })
+    } catch (error) {
+      if (!this.closed) this.send({ type: 'models-error', requestId: command.requestId, provider: command.provider,
+        code: error instanceof ModelOperationError ? error.code : 'operation-failed',
+        message: error instanceof ModelOperationError ? error.message : 'The model operation failed. Refresh and retry.' })
     }
   }
 
-  private async enableModelRoute(provider: (typeof PROVIDERS)[number]): Promise<boolean> {
-    if (modelRouteEnabled(this.ctx.settings, provider.id)) return true
-    if (!this.ctx.settings.writable) return false
-    await this.ctx.settings.mutate(MODEL_SETTINGS_NS, [{
-      op: 'set',
-      path: ['providers', provider.id],
-      value: { displayName: provider.modelGroupLabel },
-    }])
-    return modelRouteEnabled(this.ctx.settings, provider.id)
+  private async account(provider: (typeof PROVIDERS)[number]): Promise<AccountView> {
+    await this.models.ready
+    const entry = this.ctx.authorization.describe(provider.key as never)
+    const credential = await this.ctx.credentials.describeRecord(provider.key as never)
+    return {
+      provider: provider.id, label: entry?.label ?? provider.fallbackLabel,
+      available: entry?.methods.some(method => method.id === 'oauth') === true,
+      configured: credential.configured, modelsEnabled: this.models.isManaged(provider.id),
+      writable: credential.writable, inFlight: entry?.inFlight ?? false,
+    }
   }
 
   private async sendSnapshot(requestId?: string): Promise<void> {
@@ -385,11 +387,12 @@ class OAuthConnection {
       id: randomUUID(), provider: command.provider, key: provider.key,
       controller: new AbortController(), prompts: new Map(),
     }
+    this.models.loginStarted(provider.id)
     this.active = attempt
     this.changed()
     this.send({ type: 'started', requestId: command.requestId, attemptId: attempt.id, provider: attempt.provider })
     this.debug(`provider=${attempt.provider} stage=started`)
-    void this.ctx.authorization.begin({
+    this.track(this.ctx.authorization.begin({
       key: attempt.key as never,
       method: 'oauth',
       signal: attempt.controller.signal,
@@ -405,36 +408,19 @@ class OAuthConnection {
         prompt: prompt => this.openPrompt(attempt, prompt),
       },
     }).then(async (outcome) => {
-      if (outcome.status === 'authorized') {
-        try {
-          const enabled = await this.enableModelRoute(provider)
-          if (!enabled) {
-            this.sendError(
-              'model-route-unavailable',
-              'sign-in completed, but the OAuth model route could not be enabled',
-              undefined,
-              attempt.id,
-            )
-          }
-        } catch (error) {
-          this.ctx.logger.warn('dsh-oauth-adapter: model route activation failed for %s', provider.id)
-          this.ctx.logger.warn(error)
-          this.sendError(
-            'model-route-unavailable',
-            'sign-in completed, but the OAuth model route could not be enabled',
-            undefined,
-            attempt.id,
-            formatErrorDetail(error),
-          )
-        }
+      try {
+        await this.models.loginFinished(provider.id, outcome.status === 'authorized')
+      } catch (error) {
+        this.sendError('model-route-unavailable', 'Sign-in completed, but model synchronization did not complete. Open Models to retry.', undefined, attempt.id, formatErrorDetail(error))
       }
       this.finish(attempt, outcome.status)
-    }, (error: unknown) => {
+    }, async (error: unknown) => {
+      await this.models.loginFinished(provider.id, false).catch(() => {})
       this.ctx.logger.warn('dsh-oauth-adapter: provider sign-in failed for %s', attempt.provider)
       this.ctx.logger.warn(error)
       this.sendError('sign-in-failed', 'sign-in failed', undefined, attempt.id, formatErrorDetail(error))
       this.finish(attempt, 'failed')
-    })
+    }))
   }
 
   private openPrompt(attempt: ActiveAttempt, prompt: AuthorizationPrompt): Promise<string> {
@@ -507,12 +493,7 @@ class OAuthConnection {
       return
     }
     try {
-      await this.ctx.credentials.deleteRecord(provider.key as never)
-      if (pluginOwnsModelRoute(this.ctx.settings, provider)) {
-        await this.ctx.settings.mutate(MODEL_SETTINGS_NS, [{
-          op: 'unset', path: ['providers', provider.id],
-        }])
-      }
+      await this.models.forget(provider.id)
       this.send({ type: 'ack', requestId: command.requestId })
       await this.sendSnapshot()
     } catch (error) {
@@ -545,21 +526,27 @@ class OAuthConnection {
   }
 }
 
-/** Mount the loopback-only OAuth WebSocket over official rc2 services. */
+/** Mount the loopback-only OAuth WebSocket over official rc services. */
 export function apply(ctx: OAuthContext, config: Config): () => Promise<void> {
   const debug = config.debug === true
     ? (message: string): void => { ctx.logger.debug('dsh-oauth-adapter: %s', message) }
     : (): void => {}
   const connections = new Set<OAuthConnection>()
+  const models = new OAuthModelService(ctx, {
+    timeoutMs: config.modelSyncTimeoutMs ?? 30000,
+    maxResponseBytes: config.modelSyncMaxResponseBytes ?? 4194304,
+    maxPages: config.modelSyncMaxPages ?? 100,
+    codexClientVersion: config.codexClientVersion ?? '0.149.0',
+  }, provider => { for (const connection of connections) connection.modelChanged(provider) })
   const server = new WebSocketServer({
     noServer: true,
     maxPayload: MAX_FRAME_BYTES,
     handleProtocols: protocols => protocols.has(OAUTH_SOCKET_PROTOCOL) ? OAUTH_SOCKET_PROTOCOL : false,
   })
   server.on('connection', (socket) => {
-    const connection = new OAuthConnection(ctx, socket, debug, refresh)
+    const connection = new OAuthConnection(ctx, socket, debug, refresh, models)
     connections.add(connection)
-    socket.once('close', () => { connections.delete(connection) })
+    socket.once('close', () => { void connection.dispose().then(() => { connections.delete(connection) }) })
   })
   server.on('error', (error) => {
     ctx.logger.warn('dsh-oauth-adapter: WebSocket server failed')
@@ -585,8 +572,10 @@ export function apply(ctx: OAuthContext, config: Config): () => Promise<void> {
   return async () => {
     credentialDisposer()
     unregister()
-    for (const connection of connections) connection.dispose()
+    const closing = [...connections].map(connection => connection.dispose())
     connections.clear()
+    await models.dispose()
+    await Promise.allSettled(closing)
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
   }
 }

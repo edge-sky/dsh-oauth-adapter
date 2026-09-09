@@ -3,3 +3,5 @@ lib/
 coverage/
 .env
 .DS_Store
+
+.pnpm-store/

@@ -1,5 +1,8 @@
 /** Shared browser/Host wire vocabulary for the OAuth account surface. */
 
+import { validManual, modelText } from './model-types.js'
+import type { ModelCommand, ModelMessage } from './model-types.js'
+
 export const OAUTH_SOCKET_PATH = '/_edge-sky/dsh-oauth'
 export const OAUTH_SOCKET_PROTOCOL = 'dsh-oauth-v1'
 export const MAX_FRAME_BYTES = 16 * 1024
@@ -61,7 +64,7 @@ export type PromptView = {
   options: readonly { id: string; label: string; description?: string }[]
 }
 
-export type ClientCommand =
+export type ClientCommand = ModelCommand
   | { type: 'refresh'; requestId: string }
   | { type: 'begin'; requestId: string; provider: ProviderId }
   | { type: 'respond'; requestId: string; attemptId: string; promptId: string; value: string }
@@ -80,7 +83,7 @@ export type OAuthErrorCode =
   | 'sign-in-failed'
   | 'operation-failed'
 
-export type ServerMessage =
+export type ServerMessage = ModelMessage
   | { type: 'snapshot'; requestId?: string; accounts: readonly AccountView[] }
   | { type: 'started'; requestId: string; attemptId: string; provider: ProviderId }
   | { type: 'notice'; attemptId: string; message: string; url?: string; code?: string }
@@ -136,6 +139,30 @@ export function parseClientCommand(raw: string): CommandParseResult {
   const requestId = isId(candidate.requestId) ? candidate.requestId : undefined
   if (requestId === undefined) return { ok: false, message: 'requestId is invalid' }
 
+  if (candidate.type.startsWith('models-')) {
+    if (!isProviderId(candidate.provider)) return { ok: false, requestId, message: 'provider is unsupported' }
+    const provider = candidate.provider
+    const fail: CommandParseResult = { ok: false, requestId, message: 'model command fields are invalid' }
+    if (candidate.type === 'models-list') {
+      return exactKeys(candidate, ['type', 'requestId', 'provider', 'offset']) && Number.isSafeInteger(candidate.offset) && Number(candidate.offset) >= 0
+        ? { ok: true, value: { type: 'models-list', requestId, provider, offset: Number(candidate.offset) } } : fail
+    }
+    if (!Number.isSafeInteger(candidate.revision) || Number(candidate.revision) < 0) return fail
+    const revision = Number(candidate.revision)
+    if (candidate.type === 'models-sync' || candidate.type === 'models-migrate') {
+      return exactKeys(candidate, ['type', 'requestId', 'provider', 'revision'])
+        ? { ok: true, value: { type: candidate.type, requestId, provider, revision } } : fail
+    }
+    if (candidate.type === 'models-save') {
+      return exactKeys(candidate, ['type', 'requestId', 'provider', 'revision', 'model']) && validManual(provider, candidate.model)
+        ? { ok: true, value: { type: 'models-save', requestId, provider, revision, model: candidate.model } } : fail
+    }
+    if (candidate.type === 'models-delete') {
+      return exactKeys(candidate, ['type', 'requestId', 'provider', 'revision', 'id']) && modelText(candidate.id)
+        ? { ok: true, value: { type: 'models-delete', requestId, provider, revision, id: candidate.id } } : fail
+    }
+    return fail
+  }
   switch (candidate.type) {
     case 'refresh':
       return exactKeys(candidate, ['requestId', 'type'])

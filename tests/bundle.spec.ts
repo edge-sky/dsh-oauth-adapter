@@ -35,11 +35,11 @@ describe('DSH Bundle', () => {
     const peers = manifest.peerDependencies ?? {}
     for (const [name, range] of Object.entries(peers)) {
       if (name.startsWith('@deepseek-ai/dsh-')) {
-        expect(range, name).toBe('>=0.1.1-rc.2 <0.2.0-0')
+        expect(range, name).toBe('>=0.1.2-rc.1 <0.2.0-0')
       }
     }
     expect(manifest.dependencies?.['@deepseek-ai/dsh-authorization']).toBeUndefined()
-    expect(manifest.devDependencies?.['@deepseek-ai/dsh-authorization']).toBe('0.1.1-rc.2')
+    expect(manifest.devDependencies?.['@deepseek-ai/dsh-authorization']).toBe('0.1.2-rc.1')
     expect(manifest.peerDependenciesMeta?.['@deepseek-ai/dsh-authorization']).toBeUndefined()
   })
 

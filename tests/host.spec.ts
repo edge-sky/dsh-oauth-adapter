@@ -54,6 +54,9 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' 
   const configured = new Map<string, boolean>()
   const deleted: string[] = []
   const modelProfiles = new Map<string, Record<string, unknown>>()
+  const managedProfiles = new Map<string, Record<string, unknown>>()
+  let modelRevision = 0
+  const routes = new Set<string>()
   const aborts = { count: 0 }
   const inFlight = new Set<string>()
   let upgrade: ((...args: any[]) => void) | undefined
@@ -106,7 +109,17 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' 
         }
       },
     },
+    get() { return undefined },
+    llm: {
+      listProviders() { return [...routes].map(id => ({ id })) },
+      registerAdapter(ids: string[]) {
+        let current = ids; current.forEach(id => routes.add(id))
+        const dispose = () => { current.forEach(id => routes.delete(id)) }
+        return Object.assign(dispose, { replace(ids: string[]) { dispose(); current = ids; ids.forEach(id => routes.add(id)) } })
+      },
+    },
     credentials: {
+      async readRecord(key: string) { return configured.get(key) ? { kind: 'grant', payload: { type: 'oauth', access: 'fake', refresh: 'fake', expires: Date.now() + 3600000 } } : undefined },
       async describeRecord(key: string) {
         return { configured: configured.get(key) === true, writable: true }
       },
@@ -118,17 +131,24 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' 
     },
     settings: {
       writable: true,
+      register() { return { watch() { return () => {} } } },
       get(namespace: string) {
+        if (namespace === 'oauth-models') return { version: 1, providers: Object.fromEntries(managedProfiles) }
         if (namespace !== 'llm-pi-ai') return undefined
         return { providers: Object.fromEntries(modelProfiles) }
       },
       describe() {
-        return [{
+        return [{ ns: 'oauth-models', revision: modelRevision }, {
           ns: 'llm-pi-ai', schema: {}, value: { providers: Object.fromEntries(modelProfiles) },
           revision: 0, user: { providers: Object.fromEntries(modelProfiles) }, applies: 'live',
         }]
       },
       async mutate(namespace: string, ops: Array<{ op: 'set' | 'unset'; path: string[]; value?: unknown }>) {
+        if (namespace === 'oauth-models') {
+          for (const op of ops) managedProfiles.set(op.path[1]!, op.value as Record<string, unknown>)
+          modelRevision++
+          return
+        }
         expect(namespace).toBe('llm-pi-ai')
         for (const op of ops) {
           expect(op.path.slice(0, 1)).toEqual(['providers'])
@@ -203,7 +223,7 @@ describe('OAuth Host surface', () => {
     expect(JSON.stringify(test.messages)).not.toContain('private-answer')
     expect(recordKeyFor('openai-codex')).toBe('llm-pi-ai/openai-codex')
     expect(test.configured.get(recordKeyFor('openai-codex'))).toBe(true)
-    expect(test.modelProfiles.get('openai-codex')).toEqual({ displayName: 'OpenAI Codex (OAuth)' })
+    expect(test.modelProfiles.has('openai-codex')).toBe(false)
     expect(test.messages).toContainEqual(expect.objectContaining({
       type: 'snapshot',
       accounts: expect.arrayContaining([expect.objectContaining({

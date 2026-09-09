@@ -36,3 +36,19 @@ describe('OAuth wire parser', () => {
     }))).toMatchObject({ ok: false })
   })
 })
+
+describe('model management wire validation', () => {
+  it.each(PROVIDERS.map(p => [p.id]))('rejects protocol injection and unrelated fields for %s', provider => {
+    expect(parseClientCommand(JSON.stringify({ type: 'models-save', requestId: 'test', provider, revision: 1, model: { id: 'new', api: 'unknown-protocol' } }))).toMatchObject({ ok: false })
+    expect(parseClientCommand(JSON.stringify({ type: 'models-sync', requestId: 'test', provider, revision: 1, token: 'not-accepted' }))).toMatchObject({ ok: false })
+  })
+  it.each(['xai','openai-codex','anthropic','kimi-coding'])('refuses even a valid protocol override on fixed provider %s', provider => {
+    const command = { type: 'models-save', requestId: 'test', provider, revision: 1, model: { id: 'new' } }
+    expect(parseClientCommand(JSON.stringify(command))).toMatchObject({ ok: true })
+    expect(parseClientCommand(JSON.stringify({ ...command, model: { id: 'new', api: provider === 'xai' ? 'openai-responses' : provider === 'openai-codex' ? 'openai-codex-responses' : 'anthropic-messages' } }))).toMatchObject({ ok: false })
+  })
+  it('requires a finite revision and bounded valid pagination', () => {
+    for (const revision of [-1, 1.5, '1', null]) expect(parseClientCommand(JSON.stringify({ type: 'models-sync', requestId: 'test', provider: 'xai', revision }))).toMatchObject({ ok: false })
+    expect(parseClientCommand(JSON.stringify({ type: 'models-list', requestId: 'test', provider: 'xai', offset: -1 }))).toMatchObject({ ok: false })
+  })
+})

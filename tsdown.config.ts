@@ -5,7 +5,6 @@ const EXTERNALS = new Set([
   'react',
   'react/jsx-runtime',
   '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-runtime/client',
 ])
 
 export default defineConfig({

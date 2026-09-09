@@ -153,7 +153,7 @@ function AttemptPanel(props: {
       )}
       {props.attempt.error !== undefined && (
         <ErrorPanel
-          message={props.attempt.error}
+          message={props.attempt.phase === 'authorized' ? props.t('loginSyncFailed') : props.attempt.error}
           {...props.attempt.errorDetail === undefined ? {} : { detail: props.attempt.errorDetail }}
           t={props.t}
         />
