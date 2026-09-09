@@ -47,6 +47,17 @@ describe('real DSH 0.1.2-rc.1 model service composition', () => {
     expect(await ctx.llm.listModels(provider)).toMatchObject([{ id: 'manual' }])
     expect(await models.page(provider, 0)).toMatchObject({ source: 'account', counts: { matched: 0, manual: 1 } })
   })
+  it('paginates automatic and manual rows separately without exposing pending rows', async () => {
+    const { models } = await boot()
+    for (let i = 0; i < 11; i++) await models.saveManual(provider, { id: `manual-${i}`, api: 'openai-completions' }, models.revision())
+    const automatic = (await models.page(provider, 0)).counts.matched
+    expect(automatic).toBeGreaterThan(10)
+    const page = await models.page(provider, 10, 10)
+    expect(page.rows.filter(r => r.source === 'manual')).toHaveLength(1)
+    expect(page.rows.filter(r => r.source !== 'manual').length).toBeGreaterThan(0)
+    catalog([{ id: 'unknown', model_picker_enabled: true }]); await models.sync(provider, models.revision())
+    expect(await models.page(provider, 10, 10)).toMatchObject({ offset: 0, manualOffset: 10, total: 11, rows: [{ id: 'manual-10', source: 'manual' }] })
+  })
   it('retains the last successful result on malformed data and authentication errors', async () => {
     const { models } = await boot()
     catalog([known]); await models.sync(provider, models.revision())
@@ -81,6 +92,7 @@ describe('real DSH 0.1.2-rc.1 model service composition', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(ctx.llm.listProviders().some(p => p.id === provider)).toBe(false)
     expect(await ctx.credentials.readRecord(key)).toBeUndefined()
+    expect(await models.page(provider, 10, 10)).toMatchObject({ connected: false, rows: [], offset: 0, manualOffset: 0, counts: { matched: 0, pending: 0, manual: 0 } })
     await expect(credentialBridge(ctx.credentials, () => {}).modify(provider, () => ({ type: 'oauth', access: 'late', refresh: 'late', expires: 1 }))).rejects.toThrow('disconnected')
   })
   it('requires preview for custom profiles and preserves configured capacities on migration', async () => {

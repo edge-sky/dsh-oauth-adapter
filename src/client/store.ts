@@ -126,15 +126,15 @@ export class OAuthAccountsController {
 
   loadModels(): void {
     this.modelsVisible = true
-    for (const provider of this.snapshot.accounts) this.readModels(provider.provider)
+    for (const provider of this.snapshot.accounts) if (provider.configured) this.readModels(provider.provider)
   }
 
-  readModels(provider: ProviderId, offset = 0): void {
+  readModels(provider: ProviderId, offset = 0, manualOffset = 0): void {
     if (this.snapshot.connection !== 'open') return
     const requestId = crypto.randomUUID()
     this.latestModelReads.set(provider, requestId)
     this.modelRequests.set(requestId, { provider, write: false })
-    this.send({ type: 'models-list', requestId, provider, offset })
+    this.send({ type: 'models-list', requestId, provider, offset, manualOffset })
   }
 
   syncModels(provider: ProviderId): void { this.writeModels(provider, { type: 'models-sync' }) }
@@ -241,12 +241,12 @@ export class OAuthAccountsController {
   private receive(message: ServerMessage): void {
     switch (message.type) {
       case 'models-changed':
-        if (this.modelsVisible) this.readModels(message.provider, this.snapshot.modelPages?.[message.provider]?.offset ?? 0)
+        if (this.modelsVisible) this.readModels(message.provider, this.snapshot.modelPages?.[message.provider]?.offset ?? 0, this.snapshot.modelPages?.[message.provider]?.manualOffset ?? 0)
         return
       case 'models-page': {
         const request = this.modelRequests.get(message.requestId)
         this.modelRequests.delete(message.requestId)
-        if (!request) return
+        if (!request || !this.snapshot.accounts.some(account => account.provider === request.provider && account.configured)) return
         if (!request.write && this.latestModelReads.get(request.provider) !== message.requestId) return
         const current = this.snapshot.modelPages?.[request.provider]
         if (current && message.page.revision < current.revision) {
@@ -260,7 +260,7 @@ export class OAuthAccountsController {
       case 'models-error': {
         const request = this.modelRequests.get(message.requestId)
         this.modelRequests.delete(message.requestId)
-        if (!request) return
+        if (!request || !this.snapshot.accounts.some(account => account.provider === request.provider && account.configured)) return
         if (!request.write && this.latestModelReads.get(request.provider) !== message.requestId) return
         this.update({ ...this.snapshot, modelBusy: { ...this.snapshot.modelBusy, ...(request.write ? { [request.provider]: false } : {}) },
           modelErrors: { ...this.snapshot.modelErrors, [request.provider]: { code: message.code, message: message.message } } })
@@ -270,11 +270,22 @@ export class OAuthAccountsController {
       case 'snapshot':
         const accounts = [...message.accounts]
         const reconciled = reconcileAttemptView(this.snapshot.attempt, accounts)
-        const nextSnapshot = { ...this.snapshot, accounts }
+        const modelPages = { ...this.snapshot.modelPages }
+        const modelBusy = { ...this.snapshot.modelBusy }
+        const modelErrors = { ...this.snapshot.modelErrors }
+        for (const account of accounts) {
+          if (account.configured) continue
+          delete modelPages[account.provider]
+          delete modelBusy[account.provider]
+          delete modelErrors[account.provider]
+          this.latestModelReads.delete(account.provider)
+          for (const [id, request] of this.modelRequests) if (request.provider === account.provider) this.modelRequests.delete(id)
+        }
+        const nextSnapshot = { ...this.snapshot, accounts, modelPages, modelBusy, modelErrors }
         if (reconciled === undefined) delete nextSnapshot.attempt
         else nextSnapshot.attempt = reconciled
         this.update(nextSnapshot)
-        if (this.modelsVisible) for (const account of accounts) this.readModels(account.provider, this.snapshot.modelPages?.[account.provider]?.offset ?? 0)
+        if (this.modelsVisible) for (const account of accounts) if (account.configured) this.readModels(account.provider, this.snapshot.modelPages?.[account.provider]?.offset ?? 0, this.snapshot.modelPages?.[account.provider]?.manualOffset ?? 0)
         return
       case 'started':
         const { error: _error, errorDetail: _errorDetail, ...current } = this.snapshot

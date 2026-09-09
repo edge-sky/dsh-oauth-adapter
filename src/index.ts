@@ -336,7 +336,7 @@ class OAuthConnection {
         case 'models-delete': await this.models.deleteManual(command.provider, command.id, command.revision); break
       }
       if (!this.closed) this.send({ type: 'models-page', requestId: command.requestId,
-        page: await this.models.page(command.provider, command.type === 'models-list' ? command.offset : 0) })
+        page: await this.models.page(command.provider, command.type === 'models-list' ? command.offset : 0, command.type === 'models-list' ? command.manualOffset : 0) })
     } catch (error) {
       if (!this.closed) this.send({ type: 'models-error', requestId: command.requestId, provider: command.provider,
         code: error instanceof ModelOperationError ? error.code : 'operation-failed',

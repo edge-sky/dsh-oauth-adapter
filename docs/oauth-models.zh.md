@@ -33,8 +33,10 @@
 
 同一供应商的模型操作串行执行，重复同步共享同一发现任务。退出登录先使该任务失效，再删除凭据和撤销路由。插件卸载取消发现、停止接收新工作，并等待所属任务结束。已发布快照不可变，已经准备或执行中的请求保留捕获的模型描述。
 
-WebSocket 命令 `models-list`、`models-sync`、`models-migrate`、`models-save`、`models-delete` 复用原有已认证的回环连接。每次写操作携带 `oauth-models` namespace revision。冲突后浏览器刷新列表并保留编辑内容，由用户确认后重试。`models-page` 每次最多返回十项，附带已匹配、待配置、手动项总数，连接和来源状态及最近成功时间。账号状态帧不携带模型目录或 token。
+WebSocket 命令 `models-list`、`models-sync`、`models-migrate`、`models-save`、`models-delete` 复用原有已认证的回环连接。每次写操作携带 `oauth-models` namespace revision。冲突后浏览器刷新列表并保留编辑内容，由用户确认后重试。`models-list` 携带独立的 `offset` 和 `manualOffset`。`models-page` 分别返回最多十条自动匹配和十条手动配置，并独立校正两个偏移量，附带各类总数、连接和来源状态及最近成功时间；不返回待配置项。未连接账号返回空列表，浏览器清除其分页状态并忽略解除关联前失效请求的迟到响应。账号状态帧不携带模型目录或 token。
 
 ## 验证范围
 
 rc 集成测试在隔离临时目录中挂载真实 settings、credentials、pi-ai 和 LLM 服务。浏览器测试按公开 module-loader 格式加载已发布 rc 产物。远端响应和 OAuth 凭据为合成数据；不宣称 Copilot、Codex、Anthropic、Kimi Coding、OpenRouter 或 xAI 的真实账号发现或推理调用已通过。真实调用应使用目标账号单独验证，记录供应商、模型 ID、协议和结果，不记录凭据。
+
+手动配置显示在自动匹配之前。编辑已有手动模型时，表单直接替换该模型行，保存或取消后恢复模型行；新增模型的表单仍位于列表上方。

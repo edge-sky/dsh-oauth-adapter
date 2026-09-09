@@ -49,6 +49,10 @@ describe('model management wire validation', () => {
   })
   it('requires a finite revision and bounded valid pagination', () => {
     for (const revision of [-1, 1.5, '1', null]) expect(parseClientCommand(JSON.stringify({ type: 'models-sync', requestId: 'test', provider: 'xai', revision }))).toMatchObject({ ok: false })
+    for (const manualOffset of [-1, 0.5, '0', Number.MAX_SAFE_INTEGER + 1]) {
+      expect(parseClientCommand(JSON.stringify({ type: 'models-list', requestId: 'test', provider: 'xai', offset: 0, manualOffset }))).toMatchObject({ ok: false })
+    }
+    expect(parseClientCommand(JSON.stringify({ type: 'models-list', requestId: 'test', provider: 'xai', offset: 10, manualOffset: 20 }))).toMatchObject({ ok: true, value: { offset: 10, manualOffset: 20 } })
     expect(parseClientCommand(JSON.stringify({ type: 'models-list', requestId: 'test', provider: 'xai', offset: -1 }))).toMatchObject({ ok: false })
   })
 })

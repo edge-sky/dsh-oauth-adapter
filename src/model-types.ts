@@ -18,6 +18,7 @@ export interface ModelPage {
   provider: ProviderId
   revision: number
   offset: number
+  manualOffset: number
   total: number
   rows: ModelRow[]
   source: 'catalog' | 'account'
@@ -32,7 +33,7 @@ export interface ModelPage {
   migration?: { fields: string[]; models: number }
 }
 export type ModelCommand =
-  | { type: 'models-list'; requestId: string; provider: ProviderId; offset: number }
+  | { type: 'models-list'; requestId: string; provider: ProviderId; offset: number; manualOffset: number }
   | { type: 'models-sync' | 'models-migrate'; requestId: string; provider: ProviderId; revision: number }
   | { type: 'models-save'; requestId: string; provider: ProviderId; revision: number; model: ManualModel }
   | { type: 'models-delete'; requestId: string; provider: ProviderId; revision: number; id: string }

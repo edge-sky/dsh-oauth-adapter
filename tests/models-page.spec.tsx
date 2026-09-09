@@ -9,10 +9,12 @@ import { PROVIDERS } from '../src/protocol.ts'
 import type { ModelPage } from '../src/model-types.ts'
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const run of cleanups.splice(0).reverse()) await run(); vi.unstubAllGlobals() })
-async function boot(provider = 'github-copilot', localeId = 'en') {
+async function boot(provider = 'github-copilot', localeId = 'en', paginated = false) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   const requests: any[] = []
-  let page: ModelPage = { provider: provider as never, revision: 1, offset: 0, total: 1, rows: [{ id: 'future-model', name: 'Future model', source: 'pending' }], source: 'account', counts: { matched: 0, pending: 1, manual: 0 }, connected: true, writable: true, managed: true, busy: false }
+  let page: ModelPage = { provider: provider as never, revision: 1, offset: 0, manualOffset: 0, total: 1, rows: [{ id: 'future-model', name: 'Future model', source: 'pending' }], source: 'account', counts: { matched: 0, pending: 1, manual: 0 }, connected: true, writable: true, managed: true, busy: false }
+  let connected = true
+  const allRows = paginated ? [...Array.from({ length: 12 }, (_, i) => ({ id: `auto-${i}`, name: `Auto ${i}`, source: 'matched' as const })), ...Array.from({ length: 11 }, (_, i) => ({ id: `manual-${i}`, name: `Manual ${i}`, source: 'manual' as const, api: 'openai-completions' }))] : undefined
   class Socket extends EventTarget {
     static OPEN = 1; static CONNECTING = 0
     readyState = 1
@@ -21,11 +23,13 @@ async function boot(provider = 'github-copilot', localeId = 'en') {
       const command = JSON.parse(raw); requests.push(command)
       queueMicrotask(() => {
         const reply = (message: object) => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }))
-        if (command.type === 'refresh') reply({ type: 'snapshot', accounts: PROVIDERS.map(p => ({ provider: p.id, label: p.fallbackLabel, available: true, configured: p.id === provider, modelsEnabled: p.id === provider, writable: true, inFlight: false })) })
+        if (command.type === 'forget') connected = false
+        if (command.type === 'refresh' || command.type === 'forget') reply({ type: 'snapshot', accounts: PROVIDERS.map(p => ({ provider: p.id, label: p.fallbackLabel, available: true, configured: connected && p.id === provider, modelsEnabled: connected && p.id === provider, writable: true, inFlight: false })) })
         if (command.type === 'models-save') {
           page = { ...page, revision: page.revision + 1, rows: [{ ...command.model, name: command.model.name ?? command.model.id, source: 'manual' }], counts: { matched: 0, pending: 0, manual: 1 } }
         }
         if (command.type === 'models-sync') page = { ...page, revision: page.revision + 1, error: 'Model discovery returned HTTP 403.' }
+        if (command.type === 'models-list' && allRows) page = { ...page, offset: command.offset, manualOffset: command.manualOffset, total: 23, counts: { matched: 12, pending: 0, manual: 11 }, rows: [...allRows.slice(0, 12).slice(command.offset, command.offset + 10), ...allRows.slice(12).slice(command.manualOffset, command.manualOffset + 10)] }
         if (command.type.startsWith('models-')) reply({ type: 'models-page', requestId: command.requestId, page: command.provider === provider ? page : { ...page, provider: command.provider, rows: [], total: 0, connected: false, managed: false, counts: { matched: 0, pending: 0, manual: 0 } } })
       })
     }
@@ -79,28 +83,75 @@ async function boot(provider = 'github-copilot', localeId = 'en') {
 }
 function click(element: Element) { act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))) }
 describe('OAuth footer in the actual DSH rc Models page', () => {
-  it('registers once, pre-fills a pending model and saves its selected protocol', async () => {
+  it('registers once, hides pending models and saves a manual model with its selected protocol', async () => {
     const { runtime, view, requests, oauth } = await boot()
     expect(runtime.slots.entries('settings.models.footer')).toHaveLength(1)
-    const configure = view.getByText('Configure')
+    const toggle = view.container.querySelector<HTMLButtonElement>('.dsh-oauth-model-header button')!
+    const details = view.container.querySelector<HTMLElement>('.dsh-oauth-model-details')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(details.hidden).toBe(true)
+    click(toggle); await runtime.flush()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(details.hidden).toBe(false)
+    click(toggle); await runtime.flush()
+    expect(details.hidden).toBe(true)
+    click(toggle); await runtime.flush()
+    expect(view.container.textContent).not.toContain('Future model')
+    const configure = view.getByText('Add model')
     click(configure)
     await runtime.flush()
-    expect(view.container.querySelector('input')?.value).toBe('future-model')
+    const input = view.container.querySelector('input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'future-model')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
     expect(view.container.querySelector('select')?.options.length).toBe(3)
     act(() => view.container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
     await runtime.flush()
     expect(requests.find(c => c.type === 'models-save')).toMatchObject({ provider: 'github-copilot', revision: 1, model: { id: 'future-model', api: 'openai-completions' } })
+    expect([...view.container.querySelectorAll('.dsh-oauth-model-group')].map(group => group.getAttribute('aria-label'))).toEqual(['Manual', 'Automatic matches'])
+    const row = view.container.querySelector('.dsh-oauth-model-group[aria-label="Manual"] li')!
+    click(row.querySelector('button')!); await runtime.flush()
+    expect(row.querySelector('form')).not.toBeNull()
+    expect(row.querySelector('.dsh-oauth-model-identity')).toBeNull()
+    expect(view.container.querySelector('.dsh-oauth-model-details > form')).toBeNull()
+    expect(row.querySelector('input')?.readOnly).toBe(true)
+    click(view.getByText('Cancel')); await runtime.flush()
+    expect(row.querySelector('form')).toBeNull()
+    expect(row.querySelector('.dsh-oauth-model-identity')).not.toBeNull()
+    click(row.querySelector('button')!); await runtime.flush()
+    act(() => row.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    await runtime.flush()
+    expect(row.querySelector('form')).toBeNull()
+    expect(row.querySelector('.dsh-oauth-model-identity')).not.toBeNull()
     expect(view.container.querySelector('.dsh-oauth-model-provider')?.outerHTML).toMatchSnapshot()
     await oauth.dispose()
     expect(runtime.slots.entries('settings.models.footer')).toHaveLength(0)
   })
   it.each(['xai','openai-codex','anthropic','kimi-coding'])('hides the protocol selector for %s', async provider => {
     const { runtime, view } = await boot(provider)
-    click(view.getByText('Configure')); await runtime.flush()
+    click(view.getByText('Edit')); await runtime.flush()
+    click(view.getByText('Add model')); await runtime.flush()
     expect(view.container.querySelector('.dsh-oauth-model-form select')).toBeNull()
+  })
+  it('paginates automatic and manual groups independently and clears a signed-out provider', async () => {
+    const { runtime, view, requests } = await boot('github-copilot', 'en', true)
+    click(view.container.querySelector('.dsh-oauth-model-header button')!); await runtime.flush()
+    const group = (label: string) => view.container.querySelector(`section[aria-label="${label}"]`)!
+    const next = (label: string) => [...group(label).querySelectorAll('button')].find(b => b.textContent === 'Next')!
+    click(next('Automatic matches')); await runtime.flush()
+    expect(group('Automatic matches').textContent).toContain('Auto 10')
+    expect(group('Manual').textContent).toContain('Manual 0')
+    click(next('Manual')); await runtime.flush()
+    expect(group('Automatic matches').textContent).toContain('Auto 10')
+    expect(group('Manual').textContent).toContain('Manual 10')
+    expect(requests.at(-1)).toMatchObject({ offset: 10, manualOffset: 10 })
+    click(view.getByText('Sign out')); await runtime.flush()
+    expect(view.container.querySelector('.dsh-oauth-model-provider')).toBeNull()
   })
   it('renders Chinese discovery failure independently from the connected account state', async () => {
     const { runtime, view } = await boot('github-copilot', 'zh')
+    click(view.getByText('编辑')); await runtime.flush()
     click(view.getByText('同步模型')); await runtime.flush()
     expect(view.container.querySelector('.dsh-oauth-model-provider')?.outerHTML).toMatchSnapshot()
   })

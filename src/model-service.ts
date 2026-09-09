@@ -178,20 +178,25 @@ export class OAuthModelService {
     }
   }
 
-  async page(provider: ProviderId, offset: number): Promise<ModelPage> {
+  async page(provider: ProviderId, offset: number, manualOffset = 0): Promise<ModelPage> {
     await this.ready
     const state = this.state().providers[provider]
     const fallback: ProviderModels = { phase: 'pending', legacy: this.legacy(provider).profile ?? {}, manual: [] }
-    const rows = materialize(provider, state ?? fallback).rows
+    const connected = await this.connected(provider)
+    const rows = connected ? materialize(provider, state ?? fallback).rows : []
+    const automatic = rows.filter(row => row.source === 'catalog' || row.source === 'matched')
+    const manual = rows.filter(row => row.source === 'manual')
     const legacy = this.legacy(provider)
-    offset = Math.min(offset, Math.max(0, Math.floor((rows.length - 1) / MODEL_PAGE_SIZE) * MODEL_PAGE_SIZE))
+    offset = Math.min(offset, Math.max(0, Math.floor((automatic.length - 1) / MODEL_PAGE_SIZE) * MODEL_PAGE_SIZE))
+    manualOffset = Math.min(manualOffset, Math.max(0, Math.floor((manual.length - 1) / MODEL_PAGE_SIZE) * MODEL_PAGE_SIZE))
     return {
-      provider, revision: this.revision(), offset, total: rows.length, rows: rows.slice(offset, offset + MODEL_PAGE_SIZE),
+      provider, revision: this.revision(), offset, manualOffset, total: automatic.length + manual.length,
+      rows: [...automatic.slice(offset, offset + MODEL_PAGE_SIZE), ...manual.slice(manualOffset, manualOffset + MODEL_PAGE_SIZE)],
       source: state?.discovered ? 'account' : 'catalog',
       counts: { matched: rows.filter(r => r.source === 'matched' || r.source === 'catalog').length, pending: rows.filter(r => r.source === 'pending').length, manual: rows.filter(r => r.source === 'manual').length },
-      connected: await this.connected(provider), writable: this.ctx.settings.writable,
+      connected, writable: this.ctx.settings.writable,
       managed: this.isManaged(provider), busy: this.syncs.has(provider),
-      ...(state?.syncedAt === undefined ? {} : { syncedAt: state.syncedAt }),
+      ...(!connected || state?.syncedAt === undefined ? {} : { syncedAt: state.syncedAt }),
       ...(this.errors.has(provider) ? { error: this.errors.get(provider)!.message, errorCode: this.errors.get(provider)!.code } : {}),
       ...((state?.phase === 'pending' || !state && legacy.custom) && !legacy.blocked ? { migration: { fields: Object.keys(state?.legacy ?? legacy.profile ?? {}), models: (state?.legacy ?? legacy.profile)?.models?.length ?? 0 } } : {}),
     }

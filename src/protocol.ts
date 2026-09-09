@@ -144,8 +144,8 @@ export function parseClientCommand(raw: string): CommandParseResult {
     const provider = candidate.provider
     const fail: CommandParseResult = { ok: false, requestId, message: 'model command fields are invalid' }
     if (candidate.type === 'models-list') {
-      return exactKeys(candidate, ['type', 'requestId', 'provider', 'offset']) && Number.isSafeInteger(candidate.offset) && Number(candidate.offset) >= 0
-        ? { ok: true, value: { type: 'models-list', requestId, provider, offset: Number(candidate.offset) } } : fail
+      return exactKeys(candidate, ['type', 'requestId', 'provider', 'offset', 'manualOffset']) && Number.isSafeInteger(candidate.offset) && Number(candidate.offset) >= 0 && Number.isSafeInteger(candidate.manualOffset) && Number(candidate.manualOffset) >= 0
+        ? { ok: true, value: { type: 'models-list', requestId, provider, offset: Number(candidate.offset), manualOffset: Number(candidate.manualOffset) } } : fail
     }
     if (!Number.isSafeInteger(candidate.revision) || Number(candidate.revision) < 0) return fail
     const revision = Number(candidate.revision)

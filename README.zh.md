@@ -2,84 +2,49 @@
 
 [English](README.md) | 中文
 
-为 DSH Web profile 提供 OAuth 登录和账号模型管理。验证基线为 DSH `0.1.2-rc.1`，插件精确依赖 pi-ai `0.84.4`。同步模型不会安装或升级依赖。
+为 DSH Web profile 提供独立的 OAuth 账户页面。当前支持：
+
+| 提供商 | pi-ai 登录路径 |
+| --- | --- |
+| OpenAI Codex | 浏览器回调或设备码 |
+| GitHub Copilot | GitHub 或 GitHub Enterprise 设备码 |
+| Anthropic | 浏览器回调，并支持手工粘贴授权码/重定向地址 |
+| Kimi For Coding | 设备码 |
+| OpenRouter | 浏览器 PKCE 回调 |
+| xAI | 设备码 |
+
+当前仅对 DSH`0.1.1-rc.2`进行了测试，其他版本的兼容性需要自行测试
 
 ## 安装
 
 ```sh
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
-dsh web
 ```
 
-在 **设置 → OAuth 账户** 连接或重新连接账号。授权成功后自动同步模型。授权和同步分别报告结果：发现失败不会撤销成功的登录。
-
-在 **设置 → 模型** 的 **OAuth 模型** 区域同步已连接账号、补充待配置模型，以及添加、编辑或删除手动模型。该区域使用公开的 `settings.models.footer` 插槽，不增加独立模型设置页面。
-
-| 供应商 | 模型协议 |
-| --- | --- |
-| GitHub Copilot | 每个模型选择 Chat Completions、Responses 或 Anthropic Messages |
-| OpenRouter | 每个模型选择 Chat Completions 或 Anthropic Messages |
-| OpenAI Codex | Codex Responses |
-| xAI | OpenAI Responses |
-| Anthropic、Kimi Coding | Anthropic Messages |
-
-模型 ID 必填，显示名称留空时使用 ID。固定协议供应商不显示协议选择器，后端也拒绝协议覆盖。未知模型采用供应商配置的默认容量、文本输入，不根据名称推断思考能力。保存后可尝试发送请求，但不代表已验证模型存在、账号可调用或全部模型能力。
-
-## 同步行为
-
-发现使用各供应商的认证端点，包括 Copilot 经 OAuth 解析的 API 主机、Codex 账号请求头、Anthropic 游标分页及 OpenRouter 账号过滤列表的偏移分页。不会使用 OpenRouter 公开总目录代替账号列表。端点不支持或 OAuth 权限不足时明确报错，仍可手动配置。端点和依据见[迁移与运行说明](docs/oauth-models.zh.md)。
-
-只有同一供应商内精确匹配的 ID 才继承 pi-ai 的完整模型描述。不通过显示名称或未经证实的别名推断调用协议。未知 ID 保持为**待配置**。成功同步使用完整远端结果替换自动项，包括真正的空列表；手动项始终保留，同 ID 合并，用户明确填写的字段优先。失败保留最近成功结果。首次成功发现前，保留原配置或内置列表并标明未经验证。重新连接至不同或无法识别的账号时，先清除旧账号的自动结果，再进行发现。
-
-插件使用 `oauth-models` 保存版本、迁移备份、远端 ID 缓存和手动项。凭据始终通过 DSH credentials 服务保存在 `llm-pi-ai/<provider>`。公开 pi-ai 认证能力负责 token 刷新，token 不进入模型设置或浏览器消息。后续升级插件依赖时，已保存的远端 ID 会与新加载的目录重新匹配。
-
-既有供应商 ID 和会话引用保持不变。旧插件生成的简单配置自动迁移；自定义配置需要在模型页预览确认。API-key 引用、组合基础层配置和其他适配器占用的路由不会被覆盖。升级自定义安装前请阅读[迁移与恢复](docs/oauth-models.zh.md#迁移与恢复)。
-
-## 配置
-
-Host 插件接受以下可选配置：
-
-| 字段 | 默认值 | 含义 |
-| --- | --- | --- |
-| `debug` | `false` | 连接生命周期诊断 |
-| `modelSyncTimeoutMs` | `30000` | 模型发现及旧路由释放的超时 |
-| `modelSyncMaxResponseBytes` | `4194304` | 每页远端响应的最大字节数 |
-| `modelSyncMaxPages` | `100` | 一次同步的最大页数 |
-| `codexClientVersion` | `0.149.0` | Codex 发现端点所接收的客户端版本 |
-
-## 开发与验证
+或
 
 ```sh
-pnpm install
-pnpm run typecheck
-pnpm test
+npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 ```
 
-测试覆盖供应商响应、匹配、失败保留、revision 冲突、迁移恢复、取消、经过网络拦截的真实 rc 适配器请求，以及 DOM 环境中加载已发布 rc 模型页产物的可重放快照。WebSocket 测试需要绑定回环端口。测试凭据全部为合成数据，这些验证不代表任何供应商的真实账号发现或推理调用已经通过。无需修改 DSH 源码。
-
-## 本地打包与安装验证
-
-`npm pack` 和从目录执行的 `npm publish` 通过 `prepack` 运行类型检查、重新构建和测试；任何一步失败都会终止打包。不要使用 `--ignore-scripts` 跳过该检查。已发布版本不能覆盖，修复后发布必须使用新版本号。
-
-使用临时 `DSH_HOME` 可以测试本地 tarball，不影响现有账号与 profile，也不需要修改 DSH 代码：
+启动 DSH：
 
 ```sh
-pnpm install --frozen-lockfile
-artifact_dir=$(mktemp -d)
-npm pack --pack-destination "$artifact_dir"
-export DSH_HOME=$(mktemp -d)
-mkdir -p "$DSH_HOME/profiles/web"
-cat > "$DSH_HOME/profiles/web/pnpm-workspace.yaml" <<'YAML'
-packages:
-  - .
-nodeLinker: hoisted
-autoInstallPeers: false
-allowBuilds:
-  '@google/genai': false
-  protobufjs: false
-YAML
-npx @deepseek-ai/dsh@0.1.2-rc.1 plugin --profile web add "$artifact_dir"/*.tgz
-npx @deepseek-ai/dsh@0.1.2-rc.1 web --no-open
+npx @deepseek-ai/dsh web
 ```
 
-停止服务器后执行 `unset DSH_HOME` 恢复默认目录。测试 profile 的脚本策略显式跳过这两个依赖的安装脚本；插件仓库的策略不会传播到消费端。新用户仍需在自己的 profile 中配置该策略。启动成功只验证插件加载；真实账号登录、模型发现和推理需要单独验证。
+<img width="2940" height="1766" alt="image" src="https://github.com/user-attachments/assets/7f1dc846-9cea-468c-8a1e-27f4fa34a4fe" />
+
+
+<img width="2270" height="1524" alt="image" src="https://github.com/user-attachments/assets/8007002a-a036-4cf4-b015-d4e50eff25d9" />
+
+
+## 工作原理
+
+DSH 通过 `@deepseek-ai/dsh-llm-pi-ai` 适配器接入 pi-ai，但并没有提供 OAuth 的入口。`@edge-sky/dsh-oauth-adapter` 通过 DSH Authorization Service 暴露 pi-ai 已有的 provider 登录流程。浏览器链接、设备码、文本与密码输入、登录方式选择、取消和撤回提示均通过同一套 provider-neutral 传输完成。
+
+由于 DSH 目前并没有挂载`ctx.authorization`服务，因此该插件同时手动对其进行了挂载
+
+插件本身并不承担 OAuth 凭证管理与维持登录态的职责，或许将来 DSH 会官方支持这一登录方式，但至少现在你可以通过这个插件体验它
+
+如果这个插件帮到了你，还请留下你的小星星，如果有任何建议，欢迎 issues~
