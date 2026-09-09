@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import { recordKeyFor } from '@deepseek-ai/dsh-llm-pi-ai'
 import WebSocket from 'ws'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { acceptsBrowserUpgrade, apply, formatErrorDetail, isLoopbackAddress, safeNoticeUrl } from '../lib/index.js'
 import { MAX_FRAME_BYTES, OAUTH_SOCKET_PATH, OAUTH_SOCKET_PROTOCOL, PROVIDERS } from '../lib/protocol.js'
 import type { ServerMessage } from '../lib/protocol.js'
@@ -22,8 +22,14 @@ interface Harness {
 
 const cleanups: Array<() => Promise<void>> = []
 
+beforeEach(() => {
+  // Host transport tests use synthetic credentials and must not contact providers.
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 503 })))
+})
+
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  vi.unstubAllGlobals()
 })
 
 async function waitFor<T>(read: () => T | undefined): Promise<T> {

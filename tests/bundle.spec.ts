@@ -5,6 +5,13 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '..')
 
 describe('DSH Bundle', () => {
+  it('loads the built host entry points against the declared DSH dependencies', async () => {
+    for (const entry of ['index', 'authorization-fallback', 'invariant']) {
+      const module = await import(new URL(`../lib/${entry}.js`, import.meta.url).href)
+      expect(module).toBeDefined()
+    }
+  })
+
   it('publishes the declared profile patch', () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       dsh?: { bundle?: { patch?: string }; client?: { platform?: string; inject?: string[] } }

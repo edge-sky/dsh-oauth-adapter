@@ -56,3 +56,30 @@ pnpm test
 ```
 
 Tests cover provider responses, matching, retained results, revisions, migration recovery, cancellation, actual rc adapter requests with network interception, and published rc model-page bundles in a DOM environment with replayable snapshots. WebSocket tests bind a loopback port. All test credentials are synthetic; these checks do not establish live-account discovery or inference success for any provider. DSH source changes are not required.
+
+## Local package and installation verification
+
+`npm pack` and `npm publish` from the package directory run type checking, a fresh build, and tests through `prepack`; a failure stops packaging. Do not bypass this check with `--ignore-scripts`. Published versions cannot be overwritten, so a fixed release needs a new version number.
+
+A temporary `DSH_HOME` lets you test a local tarball without affecting existing accounts or profiles or changing DSH code:
+
+```sh
+pnpm install --frozen-lockfile
+artifact_dir=$(mktemp -d)
+npm pack --pack-destination "$artifact_dir"
+export DSH_HOME=$(mktemp -d)
+mkdir -p "$DSH_HOME/profiles/web"
+cat > "$DSH_HOME/profiles/web/pnpm-workspace.yaml" <<'YAML'
+packages:
+  - .
+nodeLinker: hoisted
+autoInstallPeers: false
+allowBuilds:
+  '@google/genai': false
+  protobufjs: false
+YAML
+npx @deepseek-ai/dsh@0.1.2-rc.1 plugin --profile web add "$artifact_dir"/*.tgz
+npx @deepseek-ai/dsh@0.1.2-rc.1 web --no-open
+```
+
+After stopping the server, run `unset DSH_HOME` to restore the default directory. The test profile explicitly skips installation scripts for these two dependencies; the plugin repository's policy does not propagate to consumers. New users still need to configure this policy in their own profiles. Successful startup verifies plugin loading; real-account login, model discovery, and inference need separate verification.

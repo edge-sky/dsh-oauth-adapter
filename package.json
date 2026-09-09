@@ -1,7 +1,7 @@
 {
   "name": "@edge-sky/dsh-oauth-adapter",
   "description": "Web OAuth account surface for official DSH authorization flows",
-  "version": "0.1.2-dev.1",
+  "version": "0.1.2-dev.2",
   "author": {
     "name": "edge-sky",
     "url": "https://github.com/edge-sky"
@@ -50,7 +50,8 @@
     "build:host": "tsc -p tsconfig.json",
     "build:client:types": "tsc -p tsconfig.client.json",
     "test": "pnpm run build && vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "prepack": "pnpm run typecheck && pnpm test"
   },
   "license": "MIT",
   "dsh": {

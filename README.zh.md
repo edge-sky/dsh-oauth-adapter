@@ -56,3 +56,30 @@ pnpm test
 ```
 
 测试覆盖供应商响应、匹配、失败保留、revision 冲突、迁移恢复、取消、经过网络拦截的真实 rc 适配器请求，以及 DOM 环境中加载已发布 rc 模型页产物的可重放快照。WebSocket 测试需要绑定回环端口。测试凭据全部为合成数据，这些验证不代表任何供应商的真实账号发现或推理调用已经通过。无需修改 DSH 源码。
+
+## 本地打包与安装验证
+
+`npm pack` 和从目录执行的 `npm publish` 通过 `prepack` 运行类型检查、重新构建和测试；任何一步失败都会终止打包。不要使用 `--ignore-scripts` 跳过该检查。已发布版本不能覆盖，修复后发布必须使用新版本号。
+
+使用临时 `DSH_HOME` 可以测试本地 tarball，不影响现有账号与 profile，也不需要修改 DSH 代码：
+
+```sh
+pnpm install --frozen-lockfile
+artifact_dir=$(mktemp -d)
+npm pack --pack-destination "$artifact_dir"
+export DSH_HOME=$(mktemp -d)
+mkdir -p "$DSH_HOME/profiles/web"
+cat > "$DSH_HOME/profiles/web/pnpm-workspace.yaml" <<'YAML'
+packages:
+  - .
+nodeLinker: hoisted
+autoInstallPeers: false
+allowBuilds:
+  '@google/genai': false
+  protobufjs: false
+YAML
+npx @deepseek-ai/dsh@0.1.2-rc.1 plugin --profile web add "$artifact_dir"/*.tgz
+npx @deepseek-ai/dsh@0.1.2-rc.1 web --no-open
+```
+
+停止服务器后执行 `unset DSH_HOME` 恢复默认目录。测试 profile 的脚本策略显式跳过这两个依赖的安装脚本；插件仓库的策略不会传播到消费端。新用户仍需在自己的 profile 中配置该策略。启动成功只验证插件加载；真实账号登录、模型发现和推理需要单独验证。
