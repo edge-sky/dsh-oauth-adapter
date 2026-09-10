@@ -17,7 +17,7 @@ dsh-oauth-adapter`>= v0.1.3-rc.0` 已适配 DSH`v0.1.2-rc.1`，早期版本请�
 
 ## 安装
 
-对于 `~v0.1.2-rc.1`
+对于 DSH`~v0.1.2-rc.1`
 
 ```sh
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
