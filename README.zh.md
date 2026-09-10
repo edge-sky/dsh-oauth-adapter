@@ -13,9 +13,11 @@
 | OpenRouter | 浏览器 PKCE 回调 |
 | xAI | 设备码 |
 
-当前仅对 DSH`0.1.1-rc.2`进行了测试，其他版本的兼容性需要自行测试
+dsh-oauth-adapter`>= v0.1.3-rc.0` 已适配 DSH`v0.1.2-rc.1`，早期版本请使用 dsh-oauth-adapter`v0.1.2-rc.0`
 
 ## 安装
+
+对于 `~v0.1.2-rc.1`
 
 ```sh
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
@@ -27,6 +29,21 @@ dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 ```
 
+----
+
+对于 DSH`0.1.1-rc.2`
+
+```sh
+dsh plugin --profile web add @edge-sky/dsh-oauth-adapter@v0.1.2-rc.0
+```
+
+或
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter@v0.1.2-rc.0
+```
+
+
 启动 DSH：
 
 ```sh
@@ -37,6 +54,12 @@ npx @deepseek-ai/dsh web
 
 
 <img width="2270" height="1524" alt="image" src="https://github.com/user-attachments/assets/8007002a-a036-4cf4-b015-d4e50eff25d9" />
+
+
+对于内置 pi-ai 未写明支持的模型，支持手动添加（可用性需自行验证）
+
+<img width="778" height="723" alt="PixPin_2026-09-10_11-02-42" src="https://github.com/user-attachments/assets/e6b10f86-591d-4801-a758-c8b56c83a18d" />
+
 
 
 ## 工作原理
