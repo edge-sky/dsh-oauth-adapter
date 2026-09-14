@@ -4,3 +4,13 @@ packages:
 allowBuilds:
   '@google/genai': false
   protobufjs: false
+
+# Keep transitive DSH packages on the minimum supported version for compatibility tests.
+overrides:
+  '@deepseek-ai/dsh-brand': 0.1.5-rc.1
+  '@deepseek-ai/dsh-llm': 0.1.5-rc.1
+  '@deepseek-ai/dsh-sandbox': 0.1.5-rc.1
+  '@deepseek-ai/dsh-timeout': 0.1.5-rc.1
+  '@deepseek-ai/dsh-typert-protocol': 0.1.5-rc.1
+  '@deepseek-ai/dsh-util-crypto': 0.1.5-rc.1
+  '@deepseek-ai/dsh-util-values': 0.1.5-rc.1

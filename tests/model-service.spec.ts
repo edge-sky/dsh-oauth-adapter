@@ -37,7 +37,7 @@ function catalog(data: unknown[]) {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data }), { headers: { 'content-type': 'application/json' } })))
 }
 const known = { id: providerFactories[provider]().getModels()[0]!.id, model_picker_enabled: true }
-describe('real DSH 0.1.5-rc.2 model service composition', () => {
+describe('real DSH 0.1.5-rc.1 model service composition', () => {
   it('resolves every catalog model for the model selector and prepares a Copilot call', async () => {
     const { ctx } = await boot()
     const models = await ctx.llm.listModels(provider)
