@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
+// Published DSH UI modules leave browser libraries external; devDependencies supply them for this page test.
 import * as Primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import * as Cordis from '@deepseek-ai/cordis'
 import { readFileSync } from 'node:fs'

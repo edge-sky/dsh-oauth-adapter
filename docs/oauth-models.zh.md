@@ -15,7 +15,7 @@
 
 使用当前凭据尝试上述端点，实际可用性取决于供应商 OAuth scope 和账号策略。HTTP 401/403 表示授权被拒绝；404/405 表示发现端点不可用。两者均不回退至公开总目录，也不清空已保存结果。其他 HTTP 错误、格式异常、不完整分页、响应超限或超时同样保留原结果。发现不会发起模型推理请求，也不会启用已禁用的 Copilot 模型策略。
 
-端点依据：[OpenRouter 账号过滤列表](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails)、[Kimi CLI 发现实现](https://github.com/MoonshotAI/kimi-cli/blob/main/src/kimi_cli/auth/platforms.py)、[Anthropic 模型 API](https://platform.claude.com/docs/en/api/models/list)、[xAI REST API](https://docs.x.ai/developers/rest-api-reference/inference)，以及安装的 pi-ai `0.84.4` Copilot/Codex OAuth 实现。未启用未经证实的别名替换。
+端点依据：[OpenRouter 账号过滤列表](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails)、[Kimi CLI 发现实现](https://github.com/MoonshotAI/kimi-cli/blob/main/src/kimi_cli/auth/platforms.py)、[Anthropic 模型 API](https://platform.claude.com/docs/en/api/models/list)、[xAI REST API](https://docs.x.ai/developers/rest-api-reference/inference)，以及安装的 pi-ai `0.85.1` Copilot/Codex OAuth 实现。未启用未经证实的别名替换。
 
 ## 迁移与恢复
 

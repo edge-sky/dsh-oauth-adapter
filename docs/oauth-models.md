@@ -15,7 +15,7 @@
 
 These endpoints are attempted with the current credential; availability remains subject to the provider's OAuth scopes and account policy. HTTP 401/403 means authorization was denied. HTTP 404/405 means this discovery endpoint is unavailable. Neither condition falls back to a public catalog or clears saved results. Other HTTP failures, malformed responses, incomplete pagination, oversized responses and timeouts also preserve the prior result. Discovery makes no inference request and does not enable disabled Copilot model policies.
 
-Endpoint references: [OpenRouter account-filtered models](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails), [Kimi CLI discovery implementation](https://github.com/MoonshotAI/kimi-cli/blob/main/src/kimi_cli/auth/platforms.py), [Anthropic model API](https://platform.claude.com/docs/en/api/models/list), [xAI REST API](https://docs.x.ai/developers/rest-api-reference/inference), and the installed pi-ai `0.84.4` Copilot/Codex OAuth implementations. Undocumented alias substitutions are not enabled.
+Endpoint references: [OpenRouter account-filtered models](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails), [Kimi CLI discovery implementation](https://github.com/MoonshotAI/kimi-cli/blob/main/src/kimi_cli/auth/platforms.py), [Anthropic model API](https://platform.claude.com/docs/en/api/models/list), [xAI REST API](https://docs.x.ai/developers/rest-api-reference/inference), and the installed pi-ai `0.85.1` Copilot/Codex OAuth implementations. Undocumented alias substitutions are not enabled.
 
 ## Migration and recovery
 
