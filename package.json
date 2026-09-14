@@ -13,7 +13,7 @@
     "type": "git",
     "url": "git+https://github.com/edge-sky/dsh-oauth-adapter.git"
   },
-  "packageManager": "pnpm@11.7.0",
+  "packageManager": "pnpm@11.23.0",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
