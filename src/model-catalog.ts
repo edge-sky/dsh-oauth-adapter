@@ -127,6 +127,7 @@ export function materialize(provider: ProviderId, state: ProviderModels, catalog
       requestImageMaxBytes: parsed.requestImageMaxBytes ?? 1048576,
       retryPolicy: resolveRetryPolicy(parsed.retryPolicy, `oauth-models/${provider}`),
       configuredMaxTokens: caps,
+      modelErrors: new Map(),
       piProvider,
     },
   }

@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OAuthModelService } from '../lib/model-service.js'
 import { credentialBridge } from '../lib/model-auth.js'
+import { providerFactories } from '../lib/model-catalog.js'
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const run of cleanup.splice(0).reverse()) await run(); vi.unstubAllGlobals() })
 const provider = 'github-copilot'
@@ -35,8 +36,17 @@ async function boot(settings: Record<string, unknown> = { 'llm-pi-ai': { provide
 function catalog(data: unknown[]) {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data }), { headers: { 'content-type': 'application/json' } })))
 }
-const known = { id: 'gpt-4.1', model_picker_enabled: true }
-describe('real DSH 0.1.2-rc.1 model service composition', () => {
+const known = { id: providerFactories[provider]().getModels()[0]!.id, model_picker_enabled: true }
+describe('real DSH 0.1.5-rc.2 model service composition', () => {
+  it('resolves every catalog model for the model selector and prepares a Copilot call', async () => {
+    const { ctx } = await boot()
+    const models = await ctx.llm.listModels(provider)
+    expect(models.length).toBeGreaterThan(0)
+    for (const model of models) {
+      await expect(ctx.llm.resolveModelInfo(provider, model.id)).resolves.toMatchObject({ provider, id: model.id })
+    }
+    await expect(ctx.llm.prepareCall({ provider, model: models[0]!.id })).resolves.toBeDefined()
+  })
   it('releases the old route, retains its ID and persists an empty successful discovery', async () => {
     const { ctx, models } = await boot()
     expect(await models.page(provider, 0)).toMatchObject({ managed: true, source: 'catalog' })
