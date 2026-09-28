@@ -1,5 +1,9 @@
 # dsh-oauth-adapter
 
+[![npm version](https://img.shields.io/npm/v/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+[![npm downloads](https://img.shields.io/npm/dm/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+[![license](https://img.shields.io/npm/l/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+
 English | [中文](README.zh.md)
 
 An OAuth account page for the DSH Web profile. It supports:
