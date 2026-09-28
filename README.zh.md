@@ -1,5 +1,9 @@
 # dsh-oauth-adapter
 
+[![npm version](https://img.shields.io/npm/v/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+[![npm downloads](https://img.shields.io/npm/dm/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+[![license](https://img.shields.io/npm/l/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+
 [English](README.md) | 中文
 
 为 DSH Web profile 提供独立的 OAuth 账户页面。当前支持：
