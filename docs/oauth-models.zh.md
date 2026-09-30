@@ -15,17 +15,19 @@
 
 使用当前凭据尝试上述端点，实际可用性取决于供应商 OAuth scope 和账号策略。HTTP 401/403 表示授权被拒绝；404/405 表示发现端点不可用。两者均不回退至公开总目录，也不清空已保存结果。其他 HTTP 错误、格式异常、不完整分页、响应超限或超时同样保留原结果。发现不会发起模型推理请求，也不会启用已禁用的 Copilot 模型策略。
 
-端点依据：[OpenRouter 账号过滤列表](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails)、[Kimi CLI 发现实现](https://github.com/MoonshotAI/kimi-cli/blob/main/src/kimi_cli/auth/platforms.py)、[Anthropic 模型 API](https://platform.claude.com/docs/en/api/models/list)、[xAI REST API](https://docs.x.ai/developers/rest-api-reference/inference)，以及安装的 pi-ai `0.85.1` Copilot/Codex OAuth 实现。未启用未经证实的别名替换。
+端点依据：[OpenRouter 账号过滤列表](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails)、[Kimi CLI 发现实现](https://github.com/MoonshotAI/kimi-cli/blob/main/src/kimi_cli/auth/platforms.py)、[Anthropic 模型 API](https://platform.claude.com/docs/en/api/models/list)、[xAI REST API](https://docs.x.ai/developers/rest-api-reference/inference)，以及安装的 pi-ai `0.87.1` Copilot/Codex OAuth 实现。未启用未经证实的别名替换。
 
 ## 迁移与恢复
 
-1. 验证新模型描述，并在 `oauth-models.providers.<id>` 保存旧配置，阶段为 `pending`。旧配置中的显式模型列表转换为手动项，避免后续发现将其删除；容量、思考、输入和兼容参数仍保存在旧配置中。
-2. 使用 namespace revision 仅移除用户层 `llm-pi-ai.providers.<id>` 字段，等待实际 LLM 路由注销。
+1. 验证新模型描述，并在 `dsh-oauth-adapter.modelStore.providers.<id>` 保存旧配置，阶段为 `pending`。旧配置中的显式模型列表转换为手动项，避免后续发现将其删除；容量、思考、输入和兼容参数仍保存在旧配置中。
+2. 使用 `llm-pi-ai` 表单修订号 仅移除用户层 `llm-pi-ai.providers.<id>` 字段，等待实际 LLM 路由注销。
 3. 通过 `ctx.llm.registerAdapter` 使用相同供应商 ID 注册插件的不可变模型快照，再保存 `managed` 阶段。
 
 失败时释放插件路由，且仅当原字段仍不存在时恢复备份，绝不覆盖其他操作的新配置。进程中断留下的 `pending` 记录将在插件下次启动时重试；重试失败仍保留备份供恢复。组合基础层、API-key 引用或其他适配器冲突会阻止接管，并在模型页显示原因。请先在原配置中解决冲突，再重试。自定义配置在迁移前展示字段和模型数量供确认。
 
-该 namespace 保存版本 `1`、供应商阶段、旧配置、手动项、可选的成功发现结果与时间，以及可用稳定账号标识的哈希，不保存凭据。迁移后的供应商如果仅存在于此 namespace，不应直接降级插件。要恢复旧版本，请先停止 DSH 并备份设置，将需要恢复的 `legacy` 配置放回用户层 `llm-pi-ai.providers`，删除对应 `oauth-models` 条目，然后启动旧版插件。不要覆盖已有供应商配置。
+`modelStore` 保存版本 `1`、供应商阶段、旧配置、手动项、可选的成功发现结果与时间，以及可用稳定账号标识的哈希，不保存凭据。迁移后的供应商如果仅存在于此存储项，不应直接降级插件。要恢复旧版本，请先停止 DSH 并备份设置，将需要恢复的 `legacy` 配置放回用户层 `llm-pi-ai.providers`，删除对应 `modelStore.providers` 条目，然后启动旧版插件。不要覆盖已有供应商配置。
+
+DSH 0.2 不会自动导入旧的 `oauth-models` 设置 namespace。升级前先备份设置文件，再将 `settings.yaml` 或 `settings.yaml.imported` 中的供应商条目复制到 profile patch 的插件配置 `modelStore.providers` 下。
 
 成功返回空列表具有权威性，可能使供应商的选择器没有自动模型；手动模型仍可用。依赖更新后在启动时重新解析已保存的远端 ID，无需刷新 token 或再次发现。
 
@@ -33,10 +35,10 @@
 
 同一供应商的模型操作串行执行，重复同步共享同一发现任务。退出登录先使该任务失效，再删除凭据和撤销路由。插件卸载取消发现、停止接收新工作，并等待所属任务结束。已发布快照不可变，已经准备或执行中的请求保留捕获的模型描述。
 
-WebSocket 命令 `models-list`、`models-sync`、`models-migrate`、`models-save`、`models-delete` 复用原有已认证的回环连接。每次写操作携带 `oauth-models` namespace revision。冲突后浏览器刷新列表并保留编辑内容，由用户确认后重试。`models-list` 携带独立的 `offset` 和 `manualOffset`。`models-page` 分别返回最多十条自动匹配和十条手动配置，并独立校正两个偏移量，附带各类总数、连接和来源状态及最近成功时间；不返回待配置项。未连接账号返回空列表，浏览器清除其分页状态并忽略解除关联前失效请求的迟到响应。账号状态帧不携带模型目录或 token。
+WebSocket 命令 `models-list`、`models-sync`、`models-migrate`、`models-save`、`models-delete` 复用原有已认证的回环连接。每次写操作携带 `dsh-oauth-adapter` 表单修订号。冲突后浏览器刷新列表并保留编辑内容，由用户确认后重试。`models-list` 携带独立的 `offset` 和 `manualOffset`。`models-page` 分别返回最多十条自动匹配和十条手动配置，并独立校正两个偏移量，附带各类总数、连接和来源状态及最近成功时间；不返回待配置项。未连接账号返回空列表，浏览器清除其分页状态并忽略解除关联前失效请求的迟到响应。账号状态帧不携带模型目录或 token。
 
 ## 验证范围
 
-rc 集成测试在隔离临时目录中挂载真实 settings、credentials、pi-ai 和 LLM 服务。浏览器测试按公开 module-loader 格式加载已发布 rc 产物。远端响应和 OAuth 凭据为合成数据；不宣称 Copilot、Codex、Anthropic、Kimi Coding、OpenRouter 或 xAI 的真实账号发现或推理调用已通过。真实调用应使用目标账号单独验证，记录供应商、模型 ID、协议和结果，不记录凭据。
+DSH 0.2 集成测试在隔离临时目录中挂载真实 credentials、pi-ai 和 LLM 服务，并使用带修订号的 Settings Forms 测试实现。浏览器测试按公开 module-loader 格式加载已发布 DSH 0.2 产物。远端响应和 OAuth 凭据为合成数据；不宣称 Copilot、Codex、Anthropic、Kimi Coding、OpenRouter 或 xAI 的真实账号发现或推理调用已通过。真实调用应使用目标账号单独验证，记录供应商、模型 ID、协议和结果，不记录凭据。
 
 手动配置显示在自动匹配之前。编辑已有手动模型时，表单直接替换该模型行，保存或取消后恢复模型行；新增模型的表单仍位于列表上方。

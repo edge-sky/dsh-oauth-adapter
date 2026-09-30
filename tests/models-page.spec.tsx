@@ -63,6 +63,7 @@ async function boot(provider = 'github-copilot', localeId = 'en', paginated = fa
   const namespaces = {
     credentials: { describe: async () => ({ ok: true, value: {} }) },
     llm: { listProviders: async () => ({ ok: true, value: [] }), listConfigurableProviders: async () => ({ ok: true, value: [] }) },
+    session: {},
     settings: { describe: async () => ({ ok: true, value: { writable: true, namespaces: [] } }) },
   }
   ctx.provide('remote', { ...namespaces, $host: { isLoopback: true }, $on(event: string, callback: Function) { subscriptions.set(event, [...subscriptions.get(event) ?? [], callback]); return () => {} } })
@@ -83,7 +84,7 @@ async function boot(provider = 'github-copilot', localeId = 'en', paginated = fa
   return { runtime, view, requests, oauth }
 }
 function click(element: Element) { act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))) }
-describe('OAuth footer in the actual DSH rc Models page', () => {
+describe('OAuth footer in the actual DSH 0.2 Models page', () => {
   it('registers once, hides pending models and saves a manual model with its selected protocol', async () => {
     const { runtime, view, requests, oauth } = await boot()
     expect(runtime.slots.entries('settings.models.footer')).toHaveLength(1)

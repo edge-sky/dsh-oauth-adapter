@@ -11,10 +11,11 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { inspect } from 'node:util'
+import type { Volatile } from '@deepseek-ai/cordis'
 import type { AuthorizationPrompt, AuthorizationService } from '@deepseek-ai/dsh-authorization'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
-import { type SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type SettingsForms from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import WebSocket, { WebSocketServer } from 'ws'
 import type { RawData } from 'ws'
@@ -24,9 +25,11 @@ import {
 import type {
   AccountView, ClientCommand, OAuthErrorCode, PromptView, ProviderId, ServerMessage,
 } from './protocol.js'
+import { validateModelStore, type ModelStore } from './model-catalog.js'
 
 /** Plugin configuration. */
 export interface Config {
+  modelStore: Volatile<ModelStore>
   /** Emit secret-free transport lifecycle diagnostics. */
   debug?: boolean
   modelSyncTimeoutMs?: number
@@ -37,6 +40,7 @@ export interface Config {
 
 /** Runtime-validated plugin configuration. */
 export const Config: z<Config> = z.object({
+  modelStore: z.object({ version: z.const(1).default(1), providers: z.dict(z.any()).default({}) }).default({ version: 1, providers: {} }).volatile(),
   debug: z.boolean().default(false),
   modelSyncTimeoutMs: z.number().min(1).max(2147483647).step(1).default(30000),
   modelSyncMaxResponseBytes: z.number().min(1024).step(1).default(4194304),
@@ -53,7 +57,7 @@ export const inject = ['authorization', 'credentials', 'settings', 'webServer', 
 type OAuthContext = ModelContext & {
   authorization: AuthorizationService
   credentials: CredentialProvider
-  settings: SettingsProvider
+  settings: SettingsForms
   webServer: WebServer
 }
 
@@ -528,6 +532,12 @@ class OAuthConnection {
 
 /** Mount the loopback-only OAuth WebSocket over official rc services. */
 export function apply(ctx: OAuthContext, config: Config): () => Promise<void> {
+  validateModelStore(config.modelStore.get())
+  ctx.on('internal/config', function(_raw, next) {
+    const raw = next()
+    if (this === ctx.fiber) validateModelStore(Config(raw).modelStore.get())
+    return raw
+  })
   const debug = config.debug === true
     ? (message: string): void => { ctx.logger.debug('dsh-oauth-adapter: %s', message) }
     : (): void => {}
@@ -537,7 +547,7 @@ export function apply(ctx: OAuthContext, config: Config): () => Promise<void> {
     maxResponseBytes: config.modelSyncMaxResponseBytes ?? 4194304,
     maxPages: config.modelSyncMaxPages ?? 100,
     codexClientVersion: config.codexClientVersion ?? '0.149.0',
-  }, provider => { for (const connection of connections) connection.modelChanged(provider) })
+  }, provider => { for (const connection of connections) connection.modelChanged(provider) }, config.modelStore)
   const server = new WebSocketServer({
     noServer: true,
     maxPayload: MAX_FRAME_BYTES,

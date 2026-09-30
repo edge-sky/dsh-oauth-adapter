@@ -137,21 +137,15 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' 
     },
     settings: {
       writable: true,
-      register() { return { watch() { return () => {} } } },
-      get(namespace: string) {
-        if (namespace === 'oauth-models') return { version: 1, providers: Object.fromEntries(managedProfiles) }
-        if (namespace !== 'llm-pi-ai') return undefined
-        return { providers: Object.fromEntries(modelProfiles) }
-      },
       describe() {
-        return [{ ns: 'oauth-models', revision: modelRevision }, {
+        return [{ ns: 'dsh-oauth-adapter', revision: modelRevision }, {
           ns: 'llm-pi-ai', schema: {}, value: { providers: Object.fromEntries(modelProfiles) },
           revision: 0, user: { providers: Object.fromEntries(modelProfiles) }, applies: 'live',
         }]
       },
       async mutate(namespace: string, ops: Array<{ op: 'set' | 'unset'; path: string[]; value?: unknown }>) {
-        if (namespace === 'oauth-models') {
-          for (const op of ops) managedProfiles.set(op.path[1]!, op.value as Record<string, unknown>)
+        if (namespace === 'dsh-oauth-adapter') {
+          for (const op of ops) managedProfiles.set(op.path[2]!, op.value as Record<string, unknown>)
           modelRevision++
           return
         }
@@ -178,7 +172,7 @@ async function harness(mode: 'prompt' | 'cancel' | 'withdraw' | 'github-domain' 
       return () => { listeners.set(event, rows.filter(row => row !== listener)) }
     },
   }
-  const disposePlugin = apply(ctx as never, {})
+  const disposePlugin = apply(ctx as never, { modelStore: { get: () => ({ version: 1, providers: Object.fromEntries(managedProfiles) }) } } as never)
   const http = createServer((_request, response) => { response.writeHead(404); response.end() })
   http.on('upgrade', (request, socket, head) => { upgrade?.(request, socket, head) })
   await new Promise<void>((resolve, reject) => {

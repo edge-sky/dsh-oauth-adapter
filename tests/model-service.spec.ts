@@ -1,9 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import * as Pi from '@deepseek-ai/dsh-llm-pi-ai'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,27 +16,63 @@ const key = Pi.recordKeyFor(provider)
 async function boot(settings: Record<string, unknown> = { 'llm-pi-ai': { providers: { [provider]: { displayName: 'GitHub Copilot (OAuth)' } } } }, config = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'oauth-model-rc-'))
   cleanup.push(() => rm(dir, { recursive: true, force: true }))
-  await writeFile(join(dir, 'settings.json'), JSON.stringify(settings))
   const ctx = new Context()
   cleanup.push(async () => { await ctx.fiber.dispose() })
+  const legacyProfiles = { ...((settings['llm-pi-ai'] as { providers?: Record<string, unknown> } | undefined)?.providers ?? {}) }
+  const baseProfiles = { ...((config as { providers?: Record<string, unknown> }).providers ?? {}) }
+  const managedProfiles = { ...((settings['oauth-models'] as { providers?: Record<string, unknown> } | undefined)?.providers ?? {}) }
+  let modelRevision = 0
+  let legacyRevision = 0
+  let piMount: { update(config: unknown): void } | undefined
+  const modelStore = { get: () => ({ version: 1 as const, providers: managedProfiles }) }
+  const settingsForms = {
+    writable: true,
+    describe: () => [
+      { ns: 'dsh-oauth-adapter', revision: modelRevision, value: { modelStore: modelStore.get() }, user: { modelStore: modelStore.get() } },
+      { ns: 'llm-pi-ai', revision: legacyRevision, value: { providers: { ...baseProfiles, ...legacyProfiles } }, base: { providers: baseProfiles }, user: { providers: legacyProfiles } },
+    ],
+    async mutate(ns: string, ops: Array<{ op: 'set' | 'unset'; path: readonly string[]; value?: unknown }>, expected?: number) {
+      if (ns === 'dsh-oauth-adapter') {
+        if (expected !== undefined && expected !== modelRevision) throw new Error('stale model revision')
+        for (const op of ops) {
+          expect(op.path.slice(0, 2)).toEqual(['modelStore', 'providers'])
+          if (op.op === 'set') managedProfiles[op.path[2]!] = op.value
+          else delete managedProfiles[op.path[2]!]
+        }
+        modelRevision++
+        ctx.emit('settings/document-updated', ns as never, modelRevision)
+        return
+      }
+      expect(ns).toBe('llm-pi-ai')
+      if (expected !== undefined && expected !== legacyRevision) throw new Error('stale pi-ai revision')
+      for (const op of ops) {
+        expect(op.path[0]).toBe('providers')
+        if (op.op === 'set') legacyProfiles[op.path[1]!] = op.value
+        else delete legacyProfiles[op.path[1]!]
+      }
+      legacyRevision++
+      piMount?.update({ providers: { ...baseProfiles, ...legacyProfiles } })
+      ctx.emit('settings/document-updated', ns as never, legacyRevision)
+    },
+  }
+  await ctx.plugin({ name: 'test-settings', apply(ctx: Context) { ctx.provide('settings', settingsForms as never) } })
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.json'), watch: false })
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, 'credentials.yaml'), watch: false })
   await ctx.credentials.modifyRecord(key, () => ({ kind: 'grant', payload: { type: 'oauth', access: 'fake', refresh: 'fake', expires: Date.now() + 3600000 } }))
-  await ctx.plugin(Pi, config)
+  piMount = await ctx.plugin(Pi, { providers: { ...baseProfiles, ...legacyProfiles } })
   let models!: OAuthModelService
   const mount = await ctx.plugin({ name: 'model-test-owner', inject: ['settings','llm','credentials'], apply(ctx: Context) {
-    models = new OAuthModelService(ctx, { timeoutMs: 300, maxResponseBytes: 100000, maxPages: 5, codexClientVersion: '0.149.0' }, () => {})
+    models = new OAuthModelService(ctx, { timeoutMs: 300, maxResponseBytes: 100000, maxPages: 5, codexClientVersion: '0.149.0' }, () => {}, modelStore as never)
     ctx.effect(() => () => models.dispose())
   } })
   await models.ready
-  return { ctx, models, mount }
+  return { ctx, models, mount, modelStore, settingsForms }
 }
 function catalog(data: unknown[]) {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data }), { headers: { 'content-type': 'application/json' } })))
 }
 const known = { id: providerFactories[provider]().getModels()[0]!.id, model_picker_enabled: true }
-describe('real DSH 0.1.5-rc.1 model service composition', () => {
+describe('DSH 0.2 model service composition', () => {
   it('resolves every catalog model for the model selector and prepares a Copilot call', async () => {
     const { ctx } = await boot()
     const models = await ctx.llm.listModels(provider)
@@ -48,9 +83,9 @@ describe('real DSH 0.1.5-rc.1 model service composition', () => {
     await expect(ctx.llm.prepareCall({ provider, model: models[0]!.id })).resolves.toBeDefined()
   })
   it('releases the old route, retains its ID and persists an empty successful discovery', async () => {
-    const { ctx, models } = await boot()
+    const { ctx, models, settingsForms } = await boot()
     expect(await models.page(provider, 0)).toMatchObject({ managed: true, source: 'catalog' })
-    expect(ctx.settings.get('llm-pi-ai').providers[provider]).toBeUndefined()
+    expect(settingsForms.describe()[1]!.user.providers[provider]).toBeUndefined()
     await models.saveManual(provider, { id: 'manual', api: 'openai-completions' }, models.revision())
     catalog([])
     await models.sync(provider, models.revision())
@@ -135,7 +170,7 @@ describe('real DSH 0.1.5-rc.1 model service composition', () => {
   })
 })
 
-describe('offline protocol dispatch through the real rc adapter', () => {
+describe('offline protocol dispatch through the real DSH 0.2 adapter', () => {
   it('dispatches distinct protocols and keeps a prepared request on its original model snapshot', async () => {
     const { ctx, models } = await boot()
     await models.saveManual(provider, { id: 'future-chat', api: 'openai-completions' }, models.revision())
@@ -160,30 +195,30 @@ describe('offline protocol dispatch through the real rc adapter', () => {
 
 describe('migration and account changes', () => {
   it('restores the source when destination registration fails, then resumes safely', async () => {
-    const { ctx, models } = await boot({ 'llm-pi-ai': { providers: { [provider]: { displayName: 'My custom OAuth' } } } })
+    const { ctx, models, settingsForms, modelStore } = await boot({ 'llm-pi-ai': { providers: { [provider]: { displayName: 'My custom OAuth' } } } })
     const stub = vi.spyOn(ctx.llm, 'registerAdapter').mockImplementationOnce(() => { throw new Error('registration failure') })
     await expect(models.migrate(provider, models.revision())).rejects.toThrow('registration failure')
     stub.mockRestore()
-    expect(ctx.settings.get('llm-pi-ai').providers[provider]).toEqual(expect.objectContaining({ displayName: 'My custom OAuth' }))
-    expect(ctx.settings.get('oauth-models').providers[provider].phase).toBe('pending')
+    expect(settingsForms.describe()[1]!.user.providers[provider]).toEqual(expect.objectContaining({ displayName: 'My custom OAuth' }))
+    expect(modelStore.get().providers[provider].phase).toBe('pending')
     await models.migrate(provider, models.revision())
     expect((await models.page(provider, 0)).managed).toBe(true)
   })
   it('clears prior discovery on a new account even if its first discovery fails', async () => {
-    const { ctx, models } = await boot()
+    const { ctx, models, modelStore } = await boot()
     catalog([known]); await models.sync(provider, models.revision())
     await models.saveManual(provider, { id: 'kept', api: 'openai-completions' }, models.revision())
     models.loginStarted(provider)
     await ctx.credentials.modifyRecord(key, () => ({ kind: 'grant', payload: { type: 'oauth', access: 'other', refresh: 'other', expires: Date.now() + 3600000, accountId: 'other-account' } }))
     vi.stubGlobal('fetch', async () => new Response('', { status: 403 }))
     await expect(models.loginFinished(provider, true)).rejects.toThrow()
-    expect(ctx.settings.get('oauth-models').providers[provider].discovered).toBeUndefined()
+    expect(modelStore.get().providers[provider].discovered).toBeUndefined()
     expect((await models.page(provider, 0)).counts.manual).toBe(1)
     expect((await models.page(provider, 0)).source).toBe('catalog')
   })
   it('does not commandeer an explicit API-key route', async () => {
-    const { ctx, models } = await boot({ 'llm-pi-ai': { providers: { [provider]: { apiKeyEnv: 'EXPLICIT_TEST_KEY' } } } })
+    const { ctx, models, settingsForms } = await boot({ 'llm-pi-ai': { providers: { [provider]: { apiKeyEnv: 'EXPLICIT_TEST_KEY' } } } })
     expect((await models.page(provider, 0)).managed).toBe(false)
-    expect(ctx.settings.get('llm-pi-ai').providers[provider].apiKeyEnv).toBe('EXPLICIT_TEST_KEY')
+    expect(settingsForms.describe()[1]!.user.providers[provider].apiKeyEnv).toBe('EXPLICIT_TEST_KEY')
   })
 })
