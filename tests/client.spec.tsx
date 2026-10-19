@@ -3,8 +3,24 @@ import { describe, expect, it } from 'vitest'
 import { OAuthAccountsSection } from '../src/client/OAuthAccountsSection.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import {
-  reconcileAttemptView, settleAttemptView, type OAuthAccountsSnapshot,
+  reconcileAttemptView, settleAttemptView, socketUrl, type OAuthAccountsSnapshot,
 } from '../src/client/store.ts'
+
+describe('OAuth socket address', () => {
+  it('uses the desktop-owned Host origin instead of the dsh-app page authority', () => {
+    expect(socketUrl({ href: 'dsh-app://app/settings' }, 'http://127.0.0.1:19387'))
+      .toBe('ws://127.0.0.1:19387/_edge-sky/dsh-oauth')
+  })
+
+  it('keeps browser sockets on the page origin and preserves TLS', () => {
+    expect(socketUrl({ href: 'https://localhost:3000/settings' }, 'http://127.0.0.1:19387'))
+      .toBe('wss://localhost:3000/_edge-sky/dsh-oauth')
+  })
+
+  it('reports a desktop shell without a Host origin', () => {
+    expect(() => socketUrl({ href: 'dsh-app://app/settings' })).toThrow('no WebSocket origin')
+  })
+})
 
 function render(snapshot: OAuthAccountsSnapshot): string {
   const controller = {

@@ -43,9 +43,20 @@ export interface OAuthAccountsSnapshot {
 
 type Listener = () => void
 
-function socketUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}${OAUTH_SOCKET_PATH}`
+/**
+ * Resolve the OAuth socket against the browser page or its desktop-owned Host.
+ * @param page - Current page location.
+ * @param streamBaseUrl - Desktop shell's authenticated local Host origin.
+ * @returns WebSocket URL for the OAuth route.
+ */
+export function socketUrl(page: Pick<Location, 'href'>, streamBaseUrl?: string): string {
+  const pageUrl = new URL(page.href)
+  const base = pageUrl.protocol === 'http:' || pageUrl.protocol === 'https:' ? page.href : streamBaseUrl
+  if (base === undefined) throw new Error('The DSH Host has no WebSocket origin.')
+  const url = new URL(OAUTH_SOCKET_PATH, base)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('The DSH Host has no WebSocket origin.')
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.href
 }
 
 function isServerMessage(value: unknown): value is ServerMessage {
@@ -170,7 +181,15 @@ export class OAuthAccountsController {
   private connect(): void {
     if (this.disposed) return
     this.update({ ...this.snapshot, connection: this.socket === undefined ? 'connecting' : 'reconnecting' })
-    const socket = new WebSocket(socketUrl(), OAUTH_SOCKET_PROTOCOL)
+    const transport = (globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: string } }).__DSH_TRANSPORT__
+    let url: string
+    try {
+      url = socketUrl(window.location, transport?.streamBaseUrl)
+    } catch {
+      this.update({ ...this.snapshot, connection: 'closed', error: 'The DSH Host connection address is unavailable.' })
+      return
+    }
+    const socket = new WebSocket(url, OAUTH_SOCKET_PROTOCOL)
     this.socket = socket
     socket.addEventListener('open', () => {
       if (this.socket !== socket) return

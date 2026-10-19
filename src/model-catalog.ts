@@ -35,9 +35,9 @@ export interface ModelStore { version: 1; providers: Partial<Record<ProviderId, 
 
 /** Validate data loaded from the settings file, including the opaque legacy profile. */
 export function validateModelStore(value: unknown): ModelStore {
-  if (!value || typeof value !== 'object') throw new Error('Invalid oauth-models settings')
+  if (!value || typeof value !== 'object') throw new Error('Invalid OAuth modelStore settings')
   const store = value as ModelStore
-  if (store.version !== 1 || !store.providers || typeof store.providers !== 'object' || Array.isArray(store.providers)) throw new Error('Unsupported oauth-models format')
+  if (store.version !== 1 || !store.providers || typeof store.providers !== 'object' || Array.isArray(store.providers)) throw new Error('Unsupported OAuth modelStore format')
   for (const [id, entry] of Object.entries(store.providers)) {
     if (!PROVIDERS.some(p => p.id === id) || !entry || !['pending', 'managed'].includes(entry.phase)) throw new Error('Invalid OAuth model provider')
     if (!Array.isArray(entry.manual) || entry.manual.some(m => !validManual(id as ProviderId, m))) throw new Error('Invalid manual OAuth model')
@@ -54,7 +54,7 @@ export function validateModelStore(value: unknown): ModelStore {
 /** Exact IDs only: unrelated providers and display-name similarities confer no compatibility. */
 export function materialize(provider: ProviderId, state: ProviderModels, catalog: Provider = providerFactories[provider]()): { profile: ResolvedPiAiProviderProfile; rows: ModelRow[] } {
   const defaults = new Map(catalog.getModels().map(m => [m.id, m]))
-  const parsed = PiConfig({ providers: { [provider]: state.legacy } }).providers?.[provider]
+  const parsed = structuredClone(PiConfig({ providers: { [provider]: state.legacy } }).providers.get()[provider]) as PiAiProviderProfile | undefined
   if (!parsed) throw new Error('Missing provider profile')
   const manual = new Map(state.manual.map(m => [m.id, m]))
   const configured = new Map((parsed.models ?? []).map(m => [m.id, m]))
@@ -125,7 +125,7 @@ export function materialize(provider: ProviderId, state: ProviderModels, catalog
       maxRequestImageBytes: parsed.maxRequestImageBytes ?? 20971520,
       requestImagePixelBudget: parsed.requestImagePixelBudget ?? 4194304,
       requestImageMaxBytes: parsed.requestImageMaxBytes ?? 1048576,
-      retryPolicy: resolveRetryPolicy(parsed.retryPolicy, `oauth-models/${provider}`),
+      retryPolicy: resolveRetryPolicy(parsed.retryPolicy, `dsh-oauth-adapter/${provider}`),
       configuredMaxTokens: caps,
       modelErrors: new Map(),
       piProvider,

@@ -1,5 +1,9 @@
 # dsh-oauth-adapter
 
+[![npm version](https://img.shields.io/npm/v/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+[![npm downloads](https://img.shields.io/npm/dm/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+[![license](https://img.shields.io/npm/l/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+
 English | [中文](README.zh.md)
 
 An OAuth account page for the DSH Web profile. It supports:
@@ -13,35 +17,19 @@ An OAuth account page for the DSH Web profile. It supports:
 | OpenRouter | Browser PKCE callback |
 | xAI | Device code |
 
-The current plugin declares DSH peer compatibility as `>=0.1.5-rc.1`. Development dependencies remain pinned to `0.1.5-rc.1` to verify the minimum supported version.
+The current plugin declares DSH peer compatibility as `>=0.2.0-rc.2`, with no upper version limit. Development dependencies remain pinned to `0.2.0-rc.2` to verify the minimum supported version.
 
 ## Install
 
-For DSH `>=0.1.5-rc.1`
+For DSH `>=0.2.0-rc.2`:
 
 ```sh
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 ```
 
-or
+Or for the official desktop, use `@edge-sky/dsh-oauth-adapter`
 
-```sh
-npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
-```
-
-----
-
-For DSH`0.1.1-rc.2`
-
-```sh
-dsh plugin --profile web add @edge-sky/dsh-oauth-adapter@v0.1.2-rc.0
-```
-
-or
-
-```sh
-npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter@v0.1.2-rc.0
-```
+For DSH `0.1.2-rc.1` through `0.1.5-rc.1`, use an adapter release from the `0.1.3` series. For DSH `0.1.1-rc.2`, use `@edge-sky/dsh-oauth-adapter@0.1.2-rc.0`.
 
 Start DSH:
 
@@ -64,9 +52,9 @@ For models not explicitly listed as supported by the built-in pi-ai, you can add
 
 DSH integrates pi-ai through the `@deepseek-ai/dsh-llm-pi-ai` adapter, but does not provide an OAuth entry point. `@edge-sky/dsh-oauth-adapter` exposes pi-ai's existing provider login flows through the DSH Authorization Service. Browser links, device codes, text and secret input, method selection, cancellation, and withdrawn prompts all use the same provider-neutral transport.
 
-Because DSH does not currently mount the `ctx.authorization` service, this plugin also mounts it manually.
+The profile patch mounts an authorization fallback when the host does not provide `ctx.authorization`.
 
-The plugin itself does not manage OAuth credentials or maintain login state. Maybe DSH support this sign-in method in the future; but for now, this plugin lets you enjoy it.
+DSH owns OAuth credentials and login state. This adapter stores model configuration in `dsh-oauth-adapter.modelStore`; see [model migration and recovery](docs/oauth-models.md).
 
 If this plugins is has helped you, please give a star for me, or create issues if you have any suggestion~
 

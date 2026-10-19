@@ -1,5 +1,9 @@
 # dsh-oauth-adapter
 
+[![npm version](https://img.shields.io/npm/v/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+[![npm downloads](https://img.shields.io/npm/dm/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+[![license](https://img.shields.io/npm/l/@edge-sky/dsh-oauth-adapter)](https://www.npmjs.com/package/@edge-sky/dsh-oauth-adapter)
+
 [English](README.md) | 中文
 
 为 DSH Web profile 提供独立的 OAuth 账户页面。当前支持：
@@ -13,36 +17,20 @@
 | OpenRouter | 浏览器 PKCE 回调 |
 | xAI | 设备码 |
 
-当前插件声明的 DSH peer 兼容范围为 `>=0.1.5-rc.1`。开发依赖仍固定为 `0.1.5-rc.1`，用于验证最低支持版本。
+当前插件声明的 DSH peer 兼容范围为 `>=0.2.0-rc.2`，不设版本上限。开发依赖仍固定为 `0.2.0-rc.2`，用于验证最低支持版本。
 
 ## 安装
 
-对于 DSH `>=0.1.5-rc.1`
+对于 DSH `>=0.2.0-rc.2`：
 
 ```sh
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
 ```
 
-或
+或使用于官方桌面端 `@edge-sky/dsh-oauth-adapter`
 
-```sh
-npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
-```
 
-----
-
-对于 DSH`0.1.1-rc.2`
-
-```sh
-dsh plugin --profile web add @edge-sky/dsh-oauth-adapter@v0.1.2-rc.0
-```
-
-或
-
-```sh
-npx @deepseek-ai/dsh plugin --profile web add @edge-sky/dsh-oauth-adapter@v0.1.2-rc.0
-```
-
+对于 DSH `0.1.2-rc.1` 至 `0.1.5-rc.1`，请使用适配器 `0.1.3` 系列；对于 DSH `0.1.1-rc.2`，请使用 `@edge-sky/dsh-oauth-adapter@0.1.2-rc.0`。
 
 启动 DSH：
 
@@ -66,8 +54,8 @@ npx @deepseek-ai/dsh web
 
 DSH 通过 `@deepseek-ai/dsh-llm-pi-ai` 适配器接入 pi-ai，但并没有提供 OAuth 的入口。`@edge-sky/dsh-oauth-adapter` 通过 DSH Authorization Service 暴露 pi-ai 已有的 provider 登录流程。浏览器链接、设备码、文本与密码输入、登录方式选择、取消和撤回提示均通过同一套 provider-neutral 传输完成。
 
-由于 DSH 目前并没有挂载`ctx.authorization`服务，因此该插件同时手动对其进行了挂载
+当宿主未提供 `ctx.authorization` 时，profile patch 会挂载授权服务后备实现。
 
-插件本身并不承担 OAuth 凭证管理与维持登录态的职责，或许将来 DSH 会官方支持这一登录方式，但至少现在你可以通过这个插件体验它
+OAuth 凭据和登录状态由 DSH 管理。适配器将模型配置保存在 `dsh-oauth-adapter.modelStore`；参见[模型迁移与恢复](docs/oauth-models.zh.md)。
 
 如果这个插件帮到了你，还请留下你的小星星，如果有任何建议，欢迎 issues~

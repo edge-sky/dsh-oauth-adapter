@@ -1,11 +1,9 @@
 /** Persistent OAuth model management and reversible ownership of existing provider routes. */
-import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import { createModels } from '@earendil-works/pi-ai'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type SettingsForms from '@deepseek-ai/dsh-settings'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle } from '@deepseek-ai/dsh-llm'
@@ -18,10 +16,9 @@ import { materialize, providerFactories, validateModelStore, type ModelStore, ty
 import { discoverAccountModels, ModelOperationError } from './model-discovery.js'
 
 export interface ModelServiceOptions { timeoutMs: number; maxResponseBytes: number; maxPages: number; codexClientVersion: string }
-export type ModelContext = Context & { settings: SettingsProvider; credentials: CredentialProvider; llm: LlmRuntime }
-const NS = 'oauth-models' as SettingsNamespace
-const LEGACY_NS = 'llm-pi-ai' as SettingsNamespace
-const Schema = z.object({ version: z.const(1).default(1), providers: z.dict(z.any()).default({}) }) as z<ModelStore>
+export type ModelContext = Context & { settings: SettingsForms; credentials: CredentialProvider; llm: LlmRuntime }
+const NS = 'dsh-oauth-adapter'
+const LEGACY_NS = 'llm-pi-ai'
 function object(value: unknown): Record<string, unknown> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined }
 function failure(code: string, message: string): never { throw new ModelOperationError(code, message) }
 
@@ -41,8 +38,7 @@ export class OAuthModelService {
   private readonly adapter: PiAiAdapter
   readonly ready: Promise<void>
 
-  constructor(private readonly ctx: ModelContext, private readonly options: ModelServiceOptions, private readonly changed: (provider: ProviderId) => void) {
-    const scope = ctx.settings.register(NS, Schema, { base: { version: 1, providers: {} }, validate: value => { validateModelStore(value) } })
+  constructor(private readonly ctx: ModelContext, private readonly options: ModelServiceOptions, private readonly changed: (provider: ProviderId) => void, private readonly modelStore: Volatile<ModelStore>) {
     this.adapter = new PiAiAdapter({
       profiles: () => this.profiles,
       resolveApiKey: async () => undefined,
@@ -51,8 +47,8 @@ export class OAuthModelService {
       resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(attachments, hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath), ref),
     })
     this.ready = this.initialize()
-    this.disposers.push(scope.watch(() => {
-      if (this.closed) return
+    this.disposers.push(ctx.on('settings/document-updated', ns => {
+      if (this.closed || ns !== NS) return
       for (const p of PROVIDERS) void this.enqueue(p.id, async () => { await this.reconcile(p.id) }).catch(error => this.report(p.id, error))
     }))
     this.disposers.push(ctx.on('credentials/record-updated', key => {
@@ -62,7 +58,7 @@ export class OAuthModelService {
     }))
   }
 
-  private state(): ModelStore { return validateModelStore(this.ctx.settings.get(NS)) }
+  private state(): ModelStore { return validateModelStore(this.modelStore.get()) }
   revision(): number { return this.ctx.settings.describe().find(s => s.ns === NS)?.revision ?? 0 }
   isManaged(provider: ProviderId): boolean { return this.profiles.has(provider) }
   private checkRevision(revision: number): void { if (revision !== this.revision()) failure('settings-conflict', 'Models changed in another operation. Refresh and retry.') }
@@ -70,7 +66,7 @@ export class OAuthModelService {
   private async save(provider: ProviderId, state: ProviderModels, revision = this.revision()): Promise<void> {
     this.checkOpen()
     materialize(provider, state)
-    try { await this.ctx.settings.mutate(NS, [{ op: 'set', path: ['providers', provider], value: state }], revision) } catch (error) {
+    try { await this.ctx.settings.mutate(NS, [{ op: 'set', path: ['modelStore', 'providers', provider], value: state }], revision) } catch (error) {
       if (error instanceof SettingsConflictError) failure('settings-conflict', 'Models changed in another operation. Refresh and retry.')
       throw error
     }
