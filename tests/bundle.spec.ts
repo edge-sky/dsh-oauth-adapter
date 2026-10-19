@@ -32,7 +32,7 @@ describe('DSH Bundle', () => {
     )
   })
 
-  it('uses bounded DSH peers and requires the authorization implementation', () => {
+  it('declares minimum DSH peer versions and requires the authorization implementation', () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>
       devDependencies?: Record<string, string>
@@ -42,7 +42,7 @@ describe('DSH Bundle', () => {
     const peers = manifest.peerDependencies ?? {}
     for (const [name, range] of Object.entries(peers)) {
       if (name.startsWith('@deepseek-ai/dsh-')) {
-        expect(range, name).toBe('>=0.1.5-rc.1 <0.1.6-0')
+        expect(range, name).toBe('>=0.1.5-rc.1')
       }
     }
     expect(manifest.dependencies?.['@deepseek-ai/dsh-authorization']).toBeUndefined()

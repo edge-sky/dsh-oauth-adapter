@@ -13,11 +13,11 @@
 | OpenRouter | 浏览器 PKCE 回调 |
 | xAI | 设备码 |
 
-dsh-oauth-adapter`>= v0.1.3-rc.0` 已适配 DSH`v0.1.2-rc.1`，早期版本请使用 dsh-oauth-adapter`v0.1.2-rc.0`
+当前插件声明的 DSH peer 兼容范围为 `>=0.1.5-rc.1`。开发依赖仍固定为 `0.1.5-rc.1`，用于验证最低支持版本。
 
 ## 安装
 
-对于 DSH`~v0.1.2-rc.1`
+对于 DSH `>=0.1.5-rc.1`
 
 ```sh
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter

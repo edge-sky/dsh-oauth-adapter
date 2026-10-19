@@ -13,11 +13,11 @@ An OAuth account page for the DSH Web profile. It supports:
 | OpenRouter | Browser PKCE callback |
 | xAI | Device code |
 
-dsh-oauth-adapter`>= v0.1.3-rc.0` has been adapted for DSH`v0.1.2-rc.1`; for earlier versions, please use dsh-oauth-adapter `v0.1.2-rc.0`.
+The current plugin declares DSH peer compatibility as `>=0.1.5-rc.1`. Development dependencies remain pinned to `0.1.5-rc.1` to verify the minimum supported version.
 
 ## Install
 
-For DSH`~v0.1.2-rc.1`
+For DSH `>=0.1.5-rc.1`
 
 ```sh
 dsh plugin --profile web add @edge-sky/dsh-oauth-adapter
